@@ -60,6 +60,7 @@ export function ChatInterface() {
   const [loadingPhase, setLoadingPhase] = useState<'thinking' | 'querying' | 'assembling'>('thinking');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -90,10 +91,12 @@ export function ChatInterface() {
     try {
       const payload = updatedMessages.slice(-10);
 
+      abortControllerRef.current = new AbortController();
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: payload }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!res.ok) {
@@ -172,6 +175,10 @@ export function ChatInterface() {
     }
   }
 
+  function stopAnalysis() {
+    abortControllerRef.current?.abort();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -187,7 +194,7 @@ export function ChatInterface() {
           {/* Sugestões iniciais */}
           {messages.length === 0 && !loading && (
             <div className="flex flex-col gap-3 mt-8">
-              <p className="text-sm text-zinc-400 text-center mb-2">
+              <p className="text-base text-zinc-400 text-center mb-2">
                 Comece com um relatório ou faça uma pergunta
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -195,7 +202,7 @@ export function ChatInterface() {
                   <button
                     key={s.text}
                     onClick={() => sendMessage(s.text)}
-                    className="text-left text-sm p-3 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 hover:border-zinc-300 transition-colors text-zinc-700 leading-snug"
+                    className="text-left text-base p-3 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 hover:border-zinc-300 transition-colors text-zinc-700 leading-snug"
                   >
                     <span className="mr-1.5">{s.icon}</span>
                     {s.text}
@@ -231,12 +238,18 @@ export function ChatInterface() {
             disabled={loading}
             className="flex-1"
           />
-          <Button
-            onClick={() => sendMessage(input)}
-            disabled={loading || !input.trim()}
-          >
-            Enviar
-          </Button>
+          {loading ? (
+            <Button onClick={stopAnalysis} variant="destructive">
+              Parar
+            </Button>
+          ) : (
+            <Button
+              onClick={() => sendMessage(input)}
+              disabled={!input.trim()}
+            >
+              Enviar
+            </Button>
+          )}
         </div>
       </div>
     </div>

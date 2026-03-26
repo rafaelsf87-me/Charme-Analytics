@@ -112,6 +112,7 @@ interface OrdersInput {
 
 interface ShopifyOrdersData {
   orders: {
+    pageInfo?: { hasNextPage: boolean; endCursor: string };
     edges: Array<{
       node: {
         name: string;
@@ -129,16 +130,15 @@ interface ShopifyOrdersData {
 }
 
 export async function shopify_get_orders(input: OrdersInput): Promise<string> {
-  const { date_from, date_to, status = 'any', limit = 50 } = input;
+  const { date_from, date_to, limit = 50 } = input;
 
   const validErr = validateDates(date_from, date_to);
   if (validErr) return `ERRO [Shopify]: ${validErr}`;
 
   const safeLimit = Math.min(Math.max(1, limit), 100);
-  const statusFilter = status !== 'any' ? ` financial_status:${status}` : '';
 
   const query = `{
-    orders(first: ${safeLimit}, query: "created_at:>=${date_from} created_at:<=${date_to}${statusFilter}", sortKey: CREATED_AT, reverse: true) {
+    orders(first: ${safeLimit}, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: true) {
       edges {
         node {
           name
@@ -226,22 +226,34 @@ export async function shopify_get_top_customers(
 
   const safeLimit = Math.min(Math.max(1, limit), 100);
 
-  // Busca pedidos do período e agrega por cliente no backend
-  const query = `{
-    orders(first: 250, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          createdAt
-          totalPriceSet { shopMoney { amount } }
-          customer { firstName lastName email }
-        }
-      }
-    }
-  }`;
-
   try {
-    const data = await shopifyQuery<ShopifyOrdersData>(query);
-    const orders = data.orders.edges.map((e) => e.node);
+    // Paginação completa para garantir agregação correta
+    type OrderNode = ShopifyOrdersData['orders']['edges'][0]['node'];
+    const allOrders: OrderNode[] = [];
+    let cursor: string | null = null;
+    let hasNextPage = true;
+
+    while (hasNextPage) {
+      const afterClause = cursor ? `, after: "${cursor}"` : '';
+      const q = `{
+        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: false) {
+          pageInfo { hasNextPage endCursor }
+          edges {
+            node {
+              createdAt
+              totalPriceSet { shopMoney { amount } }
+              customer { firstName lastName email }
+            }
+          }
+        }
+      }`;
+      const data = await shopifyQuery<ShopifyOrdersData>(q);
+      allOrders.push(...data.orders.edges.map((e) => e.node));
+      hasNextPage = data.orders.pageInfo?.hasNextPage ?? false;
+      cursor = data.orders.pageInfo?.endCursor ?? null;
+    }
+
+    const orders = allOrders;
 
     if (orders.length === 0) {
       return `[SHOPIFY] Nenhum pedido encontrado no período ${date_from} a ${date_to}.`;
