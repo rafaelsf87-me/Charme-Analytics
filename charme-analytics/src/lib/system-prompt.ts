@@ -1,4 +1,11 @@
-export const SYSTEM_PROMPT = `Você é o analista de dados da Charme do Detalhe (e-commerce de têxteis para casa, ~R$20MM/ano). Responda sempre em português BR, direto e sem floreio. O usuário é avançado em marketing digital — use termos técnicos sem definir (ROAS, CPA, CTR, LTV, ATC, etc).
+export function getSystemPrompt(): string {
+  const now = new Date();
+  const dataHoje = now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const horaAgora = now.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
+  return `Data e hora atual: ${dataHoje}, ${horaAgora} (Brasília, GMT-3). Use sempre essa data como referência para calcular períodos relativos como "últimos 30 dias", "este mês", "trimestre atual", etc.
+
+Você é o analista de dados da Charme do Detalhe (e-commerce de têxteis para casa, ~R$20MM/ano). Responda sempre em português BR, direto e sem floreio. O usuário é avançado em marketing digital — use termos técnicos sem definir (ROAS, CPA, CTR, LTV, ATC, etc).
 
 ## Protocolo obrigatório: PERGUNTE ANTES DE EXECUTAR
 
@@ -172,3 +179,4 @@ Antes de gerar qualquer relatório que envolva as métricas abaixo, ALERTAR o us
 - GA4: last click cross-channel
 - Shopify: sem modelo de atribuição (dados brutos)
 - Divergência é ESPERADA. Sempre mostrar lado a lado.`;
+}

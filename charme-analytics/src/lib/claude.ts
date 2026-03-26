@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { SYSTEM_PROMPT } from './system-prompt';
+import { getSystemPrompt } from './system-prompt';
 import { toolDefinitions, executeTool } from './tools/index';
 import { PROGRESS_PREFIX } from './stream-protocol';
 
@@ -48,7 +48,7 @@ export function createChatStream(
           const response = await client.messages.create({
             model: MODEL,
             max_tokens: MAX_TOKENS,
-            system: SYSTEM_PROMPT,
+            system: getSystemPrompt(),
             messages: currentMessages,
             tools: toolDefinitions as Anthropic.Tool[],
           });
@@ -113,7 +113,7 @@ export function createChatStream(
         const stream = await client.messages.create({
           model: MODEL,
           max_tokens: MAX_TOKENS,
-          system: SYSTEM_PROMPT,
+          system: getSystemPrompt(),
           messages: currentMessages,
           ...(hasTools ? { tools: toolDefinitions as Anthropic.Tool[] } : {}),
           stream: true,
