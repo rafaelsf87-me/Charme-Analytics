@@ -252,8 +252,13 @@ export async function meta_ads_campaign_insights(
     const table = compactTable(headers, tableRows);
     const roasTotal = totalGasto > 0 ? (totalReceita / totalGasto).toFixed(2) : 'N/D';
 
+    // Warning automático: atribuição do Meta tende a inflar receita/compras
+    const purchaseWarning = totalPurchases > 0
+      ? '⚠️ Conversões do Meta usam atribuição 7d click/1d view — tendem a ser 20-40% maiores que o Shopify. Comparar com receita real do Shopify para validar.\n\n'
+      : '';
+
     return (
-      `[Meta Ads] ${nameLabel}s — ${date_from} a ${date_to}${breakdowns ? ` | breakdown: ${breakdowns}` : ''}\n` +
+      `${purchaseWarning}[Meta Ads] ${nameLabel}s — ${date_from} a ${date_to}${breakdowns ? ` | breakdown: ${breakdowns}` : ''}\n` +
       `${table}\n` +
       `Total: Gasto ${formatBRL(totalGasto)} | Compras ${totalPurchases.toFixed(0)} | Receita ${formatBRL(totalReceita)} | ROAS ${roasTotal}x`
     );

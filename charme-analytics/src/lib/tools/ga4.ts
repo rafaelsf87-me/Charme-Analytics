@@ -171,6 +171,11 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
   if (!metrics?.length) return 'ERRO [GA4]: Informe ao menos uma métrica.';
   if (!dimensions?.length) return 'ERRO [GA4]: Informe ao menos uma dimensão.';
 
+  // Warning automático: addToCarts conta eventos, não sessões únicas
+  const atcWarning = metrics.includes('addToCarts')
+    ? '⚠️ addToCarts conta eventos (cliques no botão), não sessões únicas. Se o cliente adiciona 4 unidades = 4 eventos. Para taxa de ATC real (pessoas únicas), use sessões com evento add_to_cart.\n\n'
+    : '';
+
   const safeLimit = Math.min(Math.max(1, limit), 50);
 
   // Constrói filtro de dimensão se fornecido
@@ -238,7 +243,7 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
     });
 
     const table = compactTable(headers, tableRows);
-    return `[GA4] ${dimHeaders.join(' × ')} — ${metHeaders.join(', ')} (${formatDate(date_from)} a ${formatDate(date_to)})\n${table}\nTotal de linhas: ${data.rowCount ?? rows.length}`;
+    return `${atcWarning}[GA4] ${dimHeaders.join(' × ')} — ${metHeaders.join(', ')} (${formatDate(date_from)} a ${formatDate(date_to)})\n${table}\nTotal de linhas: ${data.rowCount ?? rows.length}`;
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('Timeout')) {
