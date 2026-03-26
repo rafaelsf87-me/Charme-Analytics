@@ -1,7 +1,33 @@
 import { formatBRL, formatDate, compactTable } from '@/lib/formatters';
 
-const SHOPIFY_URL = `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2024-10/graphql.json`;
+const SHOPIFY_STORE = process.env.SHOPIFY_STORE_DOMAIN!;
+const SHOPIFY_URL = `https://${SHOPIFY_STORE}/admin/api/2024-10/graphql.json`;
 const TIMEOUT_MS = 30_000;
+
+// Cache em memória do token (renova automaticamente ao expirar)
+let cachedToken = process.env.SHOPIFY_ACCESS_TOKEN ?? '';
+let tokenExpiresAt = 0; // epoch ms
+
+async function getAccessToken(): Promise<string> {
+  const agora = Date.now();
+  // Renova se não há token ou se expira nos próximos 5 minutos
+  if (!cachedToken || agora >= tokenExpiresAt - 5 * 60 * 1000) {
+    const res = await fetch(`https://${SHOPIFY_STORE}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'client_credentials',
+        client_id: process.env.SHOPIFY_CLIENT_ID,
+        client_secret: process.env.SHOPIFY_CLIENT_SECRET,
+      }),
+    });
+    if (!res.ok) throw new Error(`Falha ao renovar token Shopify: HTTP ${res.status}`);
+    const data = await res.json();
+    cachedToken = data.access_token;
+    tokenExpiresAt = agora + data.expires_in * 1000;
+  }
+  return cachedToken;
+}
 
 // Retry com backoff exponencial em 429/THROTTLED (max 3x, delays: 1s, 3s, 9s)
 async function fetchWithRetry(
@@ -10,13 +36,14 @@ async function fetchWithRetry(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const token = await getAccessToken();
 
   try {
     const res = await fetch(SHOPIFY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN ?? '',
+        'X-Shopify-Access-Token': token,
       },
       body,
       signal: controller.signal,
