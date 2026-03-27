@@ -24,7 +24,75 @@ const TOOL_PLATFORM_LABEL: Record<string, string> = {
   yampi_get_orders: 'Yampi Legacy',
   yampi_get_top_customers: 'Yampi Legacy',
   yampi_search_products: 'Yampi Legacy',
+  web_search: 'Web',
 };
+
+// ─── Grupos de tools por plataforma ──────────────────────────────────────────
+
+const SHOPIFY_TOOLS = toolDefinitions.filter(t => t.name.startsWith('shopify_'));
+const GA4_TOOLS     = toolDefinitions.filter(t => t.name.startsWith('ga4_'));
+const GADS_TOOLS    = toolDefinitions.filter(t => t.name.startsWith('google_ads_'));
+const META_TOOLS    = toolDefinitions.filter(t => t.name.startsWith('meta_ads_'));
+const YAMPI_TOOLS   = toolDefinitions.filter(t => t.name.startsWith('yampi_'));
+
+const WEB_SEARCH_TOOL: Anthropic.Tool[] = [
+  { type: 'web_search_20250305', name: 'web_search' } as unknown as Anthropic.Tool,
+];
+
+function match(msg: string, keywords: string[]): boolean {
+  return keywords.some(k => msg.includes(k));
+}
+
+function selectTools(messages: Anthropic.MessageParam[]): Anthropic.Tool[] {
+  // Extrai o conteúdo da última mensagem do usuário
+  const lastUser = [...messages].reverse().find(m => m.role === 'user');
+  const raw = typeof lastUser?.content === 'string'
+    ? lastUser.content
+    : (lastUser?.content as Anthropic.ContentBlock[] | undefined)
+        ?.filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join(' ') ?? '';
+  const msg = raw.toLowerCase();
+
+  const selected: Anthropic.Tool[] = [];
+
+  if (match(msg, ['cliente', 'pedido', 'receita', 'faturamento', 'produto', 'vend', 'ticket', 'top', 'compra', 'recompra', 'ltv', 'shopify'])) {
+    selected.push(...SHOPIFY_TOOLS);
+  }
+  if (match(msg, ['históric', 'yampi', '2023', '2024', 'todos os tempos', 'antes', 'migração', 'antigo'])) {
+    selected.push(...YAMPI_TOOLS);
+  }
+  if (match(msg, ['sessão', 'sessões', 'tráfego', 'analytics', 'ga4', 'funil', 'atc', 'add to cart', 'carrinho', 'página', 'views', 'orgânico', 'canal', 'fonte'])) {
+    selected.push(...GA4_TOOLS);
+  }
+  if (match(msg, ['google ads', 'google', 'keyword', 'pmax', 'demand gen', 'display', 'shopping', 'gaql'])) {
+    selected.push(...GADS_TOOLS);
+  }
+  if (match(msg, ['meta', 'facebook', 'instagram', 'criativo', 'adset', 'anúncio'])) {
+    selected.push(...META_TOOLS);
+  }
+  if (match(msg, ['concorrente', 'mercado', 'benchmark', 'preço relativo', 'tendência', 'google trends', 'casa das capas', 'ok darling'])) {
+    selected.push(...WEB_SEARCH_TOOL);
+  }
+
+  // Pergunta genérica de performance inclui todas as fontes de dados
+  if (match(msg, ['relatório', 'performance', 'compare', 'roas', 'cpa', 'ctr'])) {
+    selected.push(...SHOPIFY_TOOLS, ...GA4_TOOLS, ...GADS_TOOLS, ...META_TOOLS);
+  }
+
+  // Fallback: nenhum match claro → envia todas as tools analíticas
+  if (selected.length === 0) {
+    return toolDefinitions as Anthropic.Tool[];
+  }
+
+  // Deduplica mantendo ordem
+  const seen = new Set<string>();
+  return selected.filter(t => {
+    if (seen.has(t.name)) return false;
+    seen.add(t.name);
+    return true;
+  });
+}
 
 function progressMarker(payload: object): Uint8Array {
   return new TextEncoder().encode(
@@ -44,7 +112,8 @@ export function createChatStream(
     async start(controller) {
       try {
         let currentMessages: Anthropic.MessageParam[] = [...messages];
-        const hasTools = toolDefinitions.length > 0;
+        const activeTools = selectTools(messages);
+        const hasTools = activeTools.length > 0;
 
         // Tool use loop: rounds não-streaming até não haver mais tool_use
         while (hasTools) {
@@ -53,7 +122,7 @@ export function createChatStream(
             max_tokens: MAX_TOKENS,
             system: [{ type: 'text', text: getSystemPrompt(), cache_control: { type: 'ephemeral' } }],
             messages: currentMessages,
-            tools: toolDefinitions as Anthropic.Tool[],
+            tools: activeTools,
           });
 
           if (response.stop_reason !== 'tool_use') break;
@@ -75,6 +144,9 @@ export function createChatStream(
           // Executa todas as tools em paralelo
           const toolResults = await Promise.all(
             toolUseBlocks.map(async (tool) => {
+              // web_search é executada server-side pela Anthropic — não processar localmente
+              if (tool.name === 'web_search') return null;
+
               const platform = TOOL_PLATFORM_LABEL[tool.name] ?? tool.name;
               let result: string;
               let status: 'ok' | 'error' = 'ok';
@@ -102,10 +174,14 @@ export function createChatStream(
             })
           );
 
+          const clientToolResults = toolResults.filter(
+            (r): r is NonNullable<typeof r> => r !== null
+          ) as Anthropic.ToolResultBlockParam[];
+
           currentMessages = [
             ...currentMessages,
             { role: 'assistant' as const, content: response.content },
-            { role: 'user' as const, content: toolResults },
+            { role: 'user' as const, content: clientToolResults },
           ];
         }
 
@@ -118,7 +194,7 @@ export function createChatStream(
           max_tokens: MAX_TOKENS,
           system: [{ type: 'text', text: getSystemPrompt(), cache_control: { type: 'ephemeral' } }],
           messages: currentMessages,
-          ...(hasTools ? { tools: toolDefinitions as Anthropic.Tool[] } : {}),
+          ...(hasTools ? { tools: activeTools } : {}),
           stream: true,
         });
 

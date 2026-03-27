@@ -25,7 +25,7 @@ export function LoginForm() {
       });
 
       if (res.ok) {
-        router.push('/chat');
+        router.push('/home');
       } else {
         const data = await res.json();
         setError(data.error ?? 'Senha incorreta');

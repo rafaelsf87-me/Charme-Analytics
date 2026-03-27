@@ -6,9 +6,9 @@ export default async function HomePage() {
   const cookieStore = await cookies();
   const authCookie = cookieStore.get('charme_auth');
 
-  // Se já autenticado, vai direto pro chat
+  // Se já autenticado, vai pra home
   if (authCookie?.value) {
-    redirect('/chat');
+    redirect('/home');
   }
 
   return <LoginForm />;
