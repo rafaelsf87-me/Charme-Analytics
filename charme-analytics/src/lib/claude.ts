@@ -51,7 +51,7 @@ export function createChatStream(
           const response = await client.messages.create({
             model: MODEL,
             max_tokens: MAX_TOKENS,
-            system: getSystemPrompt(),
+            system: [{ type: 'text', text: getSystemPrompt(), cache_control: { type: 'ephemeral' } }],
             messages: currentMessages,
             tools: toolDefinitions as Anthropic.Tool[],
           });
@@ -116,7 +116,7 @@ export function createChatStream(
         const stream = await client.messages.create({
           model: MODEL,
           max_tokens: MAX_TOKENS,
-          system: getSystemPrompt(),
+          system: [{ type: 'text', text: getSystemPrompt(), cache_control: { type: 'ephemeral' } }],
           messages: currentMessages,
           ...(hasTools ? { tools: toolDefinitions as Anthropic.Tool[] } : {}),
           stream: true,

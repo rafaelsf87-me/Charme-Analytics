@@ -80,6 +80,7 @@ interface GAdsRow {
     conversions: string;
     conversions_value: string;
     ctr: string;
+    average_cpc: string;
   };
 }
 
@@ -92,35 +93,46 @@ async function parseStreamResponse(res: Response): Promise<GAdsRow[]> {
   const text = await res.text();
   const rows: GAdsRow[] = [];
 
-  // searchStream retorna um array JSON (ou NDJSON)
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) {
-      for (const chunk of parsed as GAdsStreamChunk[]) {
+    parsed = JSON.parse(text);
+  } catch {
+    // Não é JSON válido — tenta NDJSON (uma linha por chunk)
+    for (const line of text.split('\n').filter(Boolean)) {
+      try {
+        const chunk: GAdsStreamChunk = JSON.parse(line);
         if (chunk.error) throw new Error(chunk.error.message);
         if (chunk.results) rows.push(...chunk.results);
+      } catch (lineErr) {
+        if ((lineErr as Error).message !== 'SyntaxError') throw lineErr;
+        // ignora linhas inválidas
       }
-    } else if (parsed.error) {
-      throw new Error(parsed.error.message ?? JSON.stringify(parsed.error));
     }
-  } catch (e) {
-    if ((e as Error).message.includes('Unexpected')) {
-      // Tenta NDJSON (uma linha por chunk)
-      for (const line of text.split('\n').filter(Boolean)) {
-        try {
-          const chunk: GAdsStreamChunk = JSON.parse(line);
-          if (chunk.error) throw new Error(chunk.error.message);
-          if (chunk.results) rows.push(...chunk.results);
-        } catch {
-          // ignora linhas inválidas
-        }
-      }
-    } else {
-      throw e;
+    return rows;
+  }
+
+  if (Array.isArray(parsed)) {
+    for (const chunk of parsed as GAdsStreamChunk[]) {
+      if (chunk.error) throw new Error(chunk.error.message);
+      if (chunk.results) rows.push(...chunk.results);
     }
+  } else if ((parsed as GAdsStreamChunk).error) {
+    throw new Error((parsed as GAdsStreamChunk).error!.message ?? JSON.stringify((parsed as GAdsStreamChunk).error));
   }
 
   return rows;
+}
+
+async function extractApiError(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '');
+  try {
+    const json = JSON.parse(text);
+    const msg = json?.error?.message ?? json?.error?.details?.[0]?.message;
+    if (msg) return `HTTP ${res.status}: ${msg}`;
+  } catch {
+    // não é JSON
+  }
+  return `HTTP ${res.status}: ${text.slice(0, 300)}`;
 }
 
 // ─── Validação de datas ──────────────────────────────────────────────────────
@@ -141,17 +153,21 @@ interface CampaignReportInput {
   date_from: string;
   date_to: string;
   limit?: number;
+  include_paused?: boolean;
 }
 
 export async function google_ads_campaign_report(
   input: CampaignReportInput
 ): Promise<string> {
-  const { date_from, date_to, limit = 20 } = input;
+  const { date_from, date_to, limit = 20, include_paused = false } = input;
 
   const validErr = validateDates(date_from, date_to);
   if (validErr) return `ERRO [Google Ads]: ${validErr}`;
 
   const safeLimit = Math.min(Math.max(1, limit), 100);
+  const statusFilter = include_paused
+    ? `campaign.status IN ('ENABLED', 'PAUSED')`
+    : `campaign.status = 'ENABLED'`;
 
   const gaql = `
     SELECT
@@ -159,12 +175,13 @@ export async function google_ads_campaign_report(
       metrics.impressions,
       metrics.clicks,
       metrics.cost_micros,
+      metrics.average_cpc,
       metrics.conversions,
       metrics.conversions_value,
       metrics.ctr
     FROM campaign
     WHERE segments.date BETWEEN '${date_from}' AND '${date_to}'
-      AND campaign.status = 'ENABLED'
+      AND ${statusFilter}
     ORDER BY metrics.cost_micros DESC
     LIMIT ${safeLimit}
   `.trim();
@@ -173,8 +190,7 @@ export async function google_ads_campaign_report(
     const res = await fetchWithRetry(gaql);
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}: ${errText.slice(0, 300)}`);
+      throw new Error(await extractApiError(res));
     }
 
     const rows = await parseStreamResponse(res);
@@ -194,6 +210,8 @@ export async function google_ads_campaign_report(
       const cliques = parseInt(row.metrics?.clicks ?? '0').toLocaleString('pt-BR');
       const custoMicros = parseInt(row.metrics?.cost_micros ?? '0');
       const custo = custoMicros / 1_000_000;
+      const cpcMicros = parseInt(row.metrics?.average_cpc ?? '0');
+      const cpc = cpcMicros / 1_000_000;
       const conversoes = parseFloat(row.metrics?.conversions ?? '0');
       const receita = parseFloat(row.metrics?.conversions_value ?? '0');
       const ctr = parseFloat(row.metrics?.ctr ?? '0');
@@ -212,6 +230,7 @@ export async function google_ads_campaign_report(
         impressoes,
         cliques,
         formatPercent(ctr),
+        cpc > 0 ? formatBRL(cpc) : 'N/D',
         formatBRL(custo),
         conversoes.toFixed(1),
         formatBRL(receita),
@@ -221,7 +240,7 @@ export async function google_ads_campaign_report(
     });
 
     const table = compactTable(
-      ['#', 'Campanha', 'Impressões', 'Cliques', 'CTR', 'Gasto', 'Conv.', 'Receita', 'ROAS', 'CPA'],
+      ['#', 'Campanha', 'Impressões', 'Cliques', 'CTR', 'CPC Médio', 'Gasto', 'Conv.', 'Receita', 'ROAS', 'CPA'],
       tableRows
     );
 
@@ -266,8 +285,7 @@ export async function google_ads_search_query(
     const res = await fetchWithRetry(gaql_query.trim());
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => `HTTP ${res.status}`);
-      throw new Error(errText);
+      throw new Error(await extractApiError(res));
     }
 
     const rows = await parseStreamResponse(res);
