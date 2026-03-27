@@ -21,6 +21,9 @@ const TOOL_PLATFORM_LABEL: Record<string, string> = {
   google_ads_search_query: 'Google Ads',
   meta_ads_campaign_insights: 'Meta Ads',
   meta_ads_creative_insights: 'Meta Ads',
+  yampi_get_orders: 'Yampi Legacy',
+  yampi_get_top_customers: 'Yampi Legacy',
+  yampi_search_products: 'Yampi Legacy',
 };
 
 function progressMarker(payload: object): Uint8Array {

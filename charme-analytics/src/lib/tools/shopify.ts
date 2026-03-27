@@ -1,4 +1,5 @@
 import { formatBRL, formatDate, compactTable } from '@/lib/formatters';
+import { mergeConsecutiveOrders } from './order-utils';
 
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE_DOMAIN!;
 const SHOPIFY_URL = `https://${SHOPIFY_STORE}/admin/api/2024-10/graphql.json`;
@@ -110,6 +111,9 @@ interface OrdersInput {
   limit?: number;
 }
 
+// Status financeiros que representam pedidos pagos (filtro feito no backend, não no GraphQL)
+const PAID_STATUSES = new Set(['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED']);
+
 interface ShopifyOrdersData {
   orders: {
     pageInfo?: { hasNextPage: boolean; endCursor: string };
@@ -117,6 +121,7 @@ interface ShopifyOrdersData {
       node: {
         name: string;
         createdAt: string;
+        displayFinancialStatus: string;
         totalPriceSet: { shopMoney: { amount: string } };
         customer: { firstName: string; lastName: string; email: string } | null;
         lineItems: {
@@ -145,14 +150,15 @@ export async function shopify_get_orders(input: OrdersInput): Promise<string> {
     let hasNextPage = true;
 
     while (hasNextPage) {
-      const afterClause = cursor ? `, after: "${cursor}"` : '';
+      const afterClause: string = cursor ? `, after: "${cursor}"` : '';
       const q = `{
-        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: true) {
+        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to}", sortKey: CREATED_AT, reverse: true) {
           pageInfo { hasNextPage endCursor }
           edges {
             node {
               name
               createdAt
+              displayFinancialStatus
               totalPriceSet { shopMoney { amount } }
               customer { firstName lastName email }
               lineItems(first: 3) {
@@ -168,19 +174,22 @@ export async function shopify_get_orders(input: OrdersInput): Promise<string> {
       cursor = data.orders.pageInfo?.endCursor ?? null;
     }
 
-    if (allOrders.length === 0) {
-      return `[SHOPIFY] Nenhum pedido encontrado no período ${date_from} a ${date_to}.`;
+    // Filtra por status no backend (evita restrições do filtro GraphQL)
+    const paidOrders = allOrders.filter((o) => PAID_STATUSES.has(o.displayFinancialStatus));
+
+    if (paidOrders.length === 0) {
+      return `[SHOPIFY] Nenhum pedido pago encontrado no período ${date_from} a ${date_to}.`;
     }
 
-    // Totais calculados sobre todos os pedidos
-    const totalReceita = allOrders.reduce(
+    // Totais calculados sobre todos os pedidos pagos
+    const totalReceita = paidOrders.reduce(
       (sum, o) => sum + parseFloat(o.totalPriceSet.shopMoney.amount),
       0
     );
-    const ticketMedio = totalReceita / allOrders.length;
+    const ticketMedio = totalReceita / paidOrders.length;
 
     // Exibe apenas os primeiros `displayLimit` na tabela
-    const rows = allOrders.slice(0, displayLimit).map((o, i) => {
+    const rows = paidOrders.slice(0, displayLimit).map((o, i) => {
       const cliente = o.customer
         ? `${o.customer.firstName ?? ''} ${o.customer.lastName ?? ''}`.trim() || o.customer.email
         : 'N/D';
@@ -202,14 +211,15 @@ export async function shopify_get_orders(input: OrdersInput): Promise<string> {
       rows
     );
 
-    const suffix = allOrders.length > displayLimit
-      ? ` (exibindo ${displayLimit} de ${allOrders.length})`
-      : ` (${allOrders.length} pedidos)`;
+    const suffix = paidOrders.length > displayLimit
+      ? ` (exibindo ${displayLimit} de ${paidOrders.length})`
+      : ` (${paidOrders.length} pedidos)`;
 
     return (
       `[SHOPIFY] Pedidos ${date_from} a ${date_to}${suffix}\n` +
+      `ℹ️ Valores = totalPrice (produtos + frete + impostos − descontos). Para receita só de produtos, use subtotalPrice.\n` +
       `${table}\n` +
-      `Total: ${allOrders.length} pedidos | Receita: ${formatBRL(totalReceita)} | Ticket médio: ${formatBRL(ticketMedio)}`
+      `Total: ${paidOrders.length} pedidos | Receita: ${formatBRL(totalReceita)} | Ticket médio: ${formatBRL(ticketMedio)}`
     );
   } catch (err) {
     const msg = (err as Error).message;
@@ -256,13 +266,14 @@ export async function shopify_get_top_customers(
     let hasNextPage = true;
 
     while (hasNextPage) {
-      const afterClause = cursor ? `, after: "${cursor}"` : '';
+      const afterClause: string = cursor ? `, after: "${cursor}"` : '';
       const q = `{
-        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: false) {
+        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to}", sortKey: CREATED_AT, reverse: false) {
           pageInfo { hasNextPage endCursor }
           edges {
             node {
               createdAt
+              displayFinancialStatus
               totalPriceSet { shopMoney { amount } }
               customer { firstName lastName email }
             }
@@ -275,33 +286,43 @@ export async function shopify_get_top_customers(
       cursor = data.orders.pageInfo?.endCursor ?? null;
     }
 
-    const orders = allOrders;
+    // Filtra por status no backend
+    const orders = allOrders.filter((o) => PAID_STATUSES.has(o.displayFinancialStatus));
 
     if (orders.length === 0) {
-      return `[SHOPIFY] Nenhum pedido encontrado no período ${date_from} a ${date_to}.`;
+      return `[SHOPIFY] Nenhum pedido pago encontrado no período ${date_from} a ${date_to}.`;
     }
 
-    // Agrupa por cliente
+    // Aplica regra de pedidos consecutivos (≤2 dias = mesma compra)
+    const ordersForMerge = orders
+      .filter((o) => o.customer)
+      .map((o) => ({
+        date: new Date(o.createdAt),
+        customerEmail: o.customer!.email,
+        customerName: `${o.customer!.firstName ?? ''} ${o.customer!.lastName ?? ''}`.trim() || o.customer!.email,
+        totalPaid: parseFloat(o.totalPriceSet.shopMoney.amount),
+        orderNumbers: [] as number[],
+      }));
+
+    const merged = mergeConsecutiveOrders(ordersForMerge);
+
+    // Agrega compras mescladas por cliente
     const map = new Map<string, CustomerAgg>();
-    for (const order of orders) {
-      if (!order.customer) continue;
-      const key = order.customer.email;
-      const value = parseFloat(order.totalPriceSet.shopMoney.amount);
-      const existing = map.get(key);
+    for (const purchase of merged) {
+      const existing = map.get(purchase.customerEmail);
+      const lastDate = purchase.date.toISOString();
       if (existing) {
-        existing.totalRevenue += value;
+        existing.totalRevenue += purchase.totalPaid;
         existing.orderCount += 1;
-        if (order.createdAt < existing.firstOrder) existing.firstOrder = order.createdAt;
-        if (order.createdAt > existing.lastOrder) existing.lastOrder = order.createdAt;
+        if (lastDate > existing.lastOrder) existing.lastOrder = lastDate;
       } else {
-        const nome = `${order.customer.firstName ?? ''} ${order.customer.lastName ?? ''}`.trim() || key;
-        map.set(key, {
-          name: nome,
-          email: key,
-          totalRevenue: value,
+        map.set(purchase.customerEmail, {
+          name: purchase.customerName ?? purchase.customerEmail,
+          email: purchase.customerEmail,
+          totalRevenue: purchase.totalPaid,
           orderCount: 1,
-          firstOrder: order.createdAt,
-          lastOrder: order.createdAt,
+          firstOrder: lastDate,
+          lastOrder: lastDate,
         });
       }
     }
@@ -325,12 +346,17 @@ export async function shopify_get_top_customers(
     ]);
 
     const table = compactTable(
-      ['#', 'Cliente', 'Pedidos', 'Receita Total', 'Ticket Médio', 'Último Pedido'],
+      ['#', 'Cliente', 'Compras', 'Receita Total', 'Ticket Médio', 'Última Compra'],
       rows
     );
 
     const totalRev = sorted.reduce((s, c) => s + c.totalRevenue, 0);
-    return `[SHOPIFY] Top ${safeLimit} Clientes por ${sort_by === 'revenue' ? 'Receita' : 'Pedidos'} (${date_from} a ${date_to})\n${table}\nTotal: ${sorted.length} clientes | Receita agregada: ${formatBRL(totalRev)}`;
+    return (
+      `ℹ️ Pedidos consecutivos (≤2 dias) do mesmo cliente foram mesclados como compra única.\n` +
+      `[SHOPIFY] Top ${safeLimit} clientes por ${sort_by === 'revenue' ? 'receita' : 'nº compras'} (${date_from} a ${date_to})\n` +
+      `${table}\n` +
+      `Total: ${sorted.length} clientes | Receita agregada: ${formatBRL(totalRev)}`
+    );
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('Timeout')) {
@@ -352,6 +378,7 @@ interface ShopifyProductsData {
     edges: Array<{
       node: {
         title: string;
+        handle: string;
         productType: string;
         vendor: string;
         totalInventory: number;
@@ -373,6 +400,7 @@ export async function shopify_get_products(input: ProductsInput): Promise<string
       edges {
         node {
           title
+          handle
           productType
           vendor
           totalInventory
@@ -399,19 +427,19 @@ export async function shopify_get_products(input: ProductsInput): Promise<string
       return [
         String(i + 1),
         p.title,
+        p.handle,
         p.productType || 'N/D',
-        p.vendor || 'N/D',
         String(p.totalInventory ?? 0),
         precos || 'N/D',
       ];
     });
 
     const table = compactTable(
-      ['#', 'Produto', 'Tipo', 'Fornecedor', 'Estoque', 'Preços'],
+      ['#', 'Produto', 'Handle (URL)', 'Tipo', 'Estoque', 'Preços'],
       rows
     );
 
-    return `[SHOPIFY] Produtos${search_query ? ` — busca: "${search_query}"` : ''} (${products.length} resultados)\n${table}`;
+    return `[SHOPIFY] Produtos${search_query ? ` — busca: "${search_query}"` : ''} (${products.length} resultados)\nℹ️ Handle = slug permanente da URL. Use para cruzar com GA4 (pagePath) e detectar produtos duplicados por mudança de título.\n${table}`;
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('Timeout')) {

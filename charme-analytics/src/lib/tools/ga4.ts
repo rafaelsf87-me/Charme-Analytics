@@ -67,7 +67,7 @@ function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ─── Sanitização de termos para filtros GA4 (case-sensitive, URL-encoded) ───
+// ─── Sanitização de termos para filtros GA4 (case-sensitive) ─────────────────
 
 export function sanitizeForGA4(term: string): string {
   return term
@@ -76,6 +76,26 @@ export function sanitizeForGA4(term: string): string {
     .replace(/[\u0300-\u036f]/g, '') // remove acentos
     .replace(/\s+/g, '-'); // espaços → hífens
 }
+
+/**
+ * Retorna fragmento sem a primeira letra — contorna case-sensitivity do GA4.
+ * Ex: "Sofá" e "sofá" são ambos capturados por "ofá".
+ * Usar quando filtro exato retornar zero resultados.
+ */
+export function ga4Fragment(term: string): string {
+  const sanitized = sanitizeForGA4(term);
+  return sanitized.length > 1 ? sanitized.slice(1) : sanitized;
+}
+
+// Mapa de termos conhecidos → fragmento seguro confirmado
+export const GA4_SAFE_FRAGMENTS: Record<string, string> = {
+  sofa: 'ofá',
+  sofá: 'ofá',
+  cadeira: 'adeira',
+  cortina: 'ortina',
+  toalha: 'oalha',
+  tapete: 'apete',
+};
 
 // ─── Formatação de métricas ───────────────────────────────────────────────────
 
@@ -176,6 +196,12 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
     ? '⚠️ addToCarts conta eventos (cliques no botão), não sessões únicas. Se o cliente adiciona 4 unidades = 4 eventos. Para taxa de ATC real (pessoas únicas), use sessões com evento add_to_cart.\n\n'
     : '';
 
+  // Warning automático: análise de canais com dimensões de source/medium
+  const metaChannelDims = ['sessionSource', 'sessionMedium', 'sessionCampaignName'];
+  const metaWarning = dimensions.some((d) => metaChannelDims.includes(d))
+    ? '⚠️ Atribuição do Meta no GA4 está comprometida nesta loja: tráfego Meta aparece fragmentado em Organic Social (~39%), Cross-network (~24%) e Paid Social (<1%). Para análise de Meta Ads, use a API do Meta diretamente.\n\n'
+    : '';
+
   const safeLimit = Math.min(Math.max(1, limit), 50);
 
   // Constrói filtro de dimensão se fornecido
@@ -223,10 +249,15 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
     const rows = data.rows ?? [];
 
     if (rows.length === 0) {
-      // Tenta sugerir variações se havia filtro de produto
-      const suggestion = filters
-        ? ` Sugestão: tente um termo mais curto ou sem acento (ex: "${sanitizeForGA4(filters.split(' ').pop() ?? '')}").`
-        : '';
+      // Sugere fragmento sem primeira letra para contornar case-sensitivity do GA4
+      let suggestion = '';
+      if (filters) {
+        const rawTerm = filters.split(' ').pop() ?? '';
+        const termLower = rawTerm.toLowerCase().replace(/[àáâãä]/g, 'a').replace(/[éê]/g, 'e');
+        const knownFragment = GA4_SAFE_FRAGMENTS[termLower];
+        const fragment = knownFragment ?? ga4Fragment(rawTerm);
+        suggestion = ` ⚠️ Filtro GA4 é case-sensitive. Tente o fragmento "${fragment}" em vez de "${rawTerm}" — captura variações com/sem acento e maiúsculas.`;
+      }
       return `[GA4] Nenhum resultado para o período ${formatDate(date_from)} a ${formatDate(date_to)}.${suggestion}`;
     }
 
@@ -243,7 +274,7 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
     });
 
     const table = compactTable(headers, tableRows);
-    return `${atcWarning}[GA4] ${dimHeaders.join(' × ')} — ${metHeaders.join(', ')} (${formatDate(date_from)} a ${formatDate(date_to)})\n${table}\nTotal de linhas: ${data.rowCount ?? rows.length}`;
+    return `${atcWarning}${metaWarning}[GA4] ${dimHeaders.join(' × ')} — ${metHeaders.join(', ')} (${formatDate(date_from)} a ${formatDate(date_to)})\n${table}\nTotal de linhas: ${data.rowCount ?? rows.length}`;
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('Timeout')) {

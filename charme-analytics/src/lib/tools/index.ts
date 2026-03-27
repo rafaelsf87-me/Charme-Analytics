@@ -7,6 +7,11 @@ import {
 import { ga4_run_report, ga4_get_top_pages } from './ga4';
 import { google_ads_campaign_report, google_ads_search_query } from './google-ads';
 import { meta_ads_campaign_insights, meta_ads_creative_insights } from './meta-ads';
+import {
+  yampi_get_orders,
+  yampi_get_top_customers,
+  yampi_search_products,
+} from './yampi-legacy';
 
 // ─── Definições das tools (descriptions curtas — max 2 frases) ───────────────
 
@@ -188,6 +193,53 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'yampi_get_orders',
+    description:
+      'Pedidos históricos da Yampi (antes do Shopify) com filtro de data. Dados de Dez/2022 a ~Abr/2025 com gaps conhecidos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date_from: { type: 'string', description: 'Data inicial YYYY-MM-DD' },
+        date_to: { type: 'string', description: 'Data final YYYY-MM-DD' },
+        limit: { type: 'number', description: 'Número máximo de pedidos (padrão: 50)' },
+      },
+      required: ['date_from', 'date_to'],
+    },
+  },
+  {
+    name: 'yampi_get_top_customers',
+    description:
+      'Ranking de clientes históricos por receita ou nº de compras. Dados pré-Shopify (Yampi).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date_from: { type: 'string', description: 'Data inicial YYYY-MM-DD' },
+        date_to: { type: 'string', description: 'Data final YYYY-MM-DD' },
+        limit: { type: 'number', description: 'Número de clientes (padrão: 10)' },
+        sort_by: {
+          type: 'string',
+          enum: ['revenue', 'orders'],
+          description: 'Ordenar por receita (revenue) ou nº de compras (orders)',
+        },
+      },
+      required: ['date_from', 'date_to'],
+    },
+  },
+  {
+    name: 'yampi_search_products',
+    description:
+      'Busca vendas de um produto nos dados históricos (Yampi) por nome ou SKU.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        search_term: { type: 'string', description: 'Nome do produto ou SKU para buscar' },
+        date_from: { type: 'string', description: 'Data inicial YYYY-MM-DD (opcional)' },
+        date_to: { type: 'string', description: 'Data final YYYY-MM-DD (opcional)' },
+      },
+      required: ['search_term'],
+    },
+  },
+  {
     name: 'ga4_get_top_pages',
     description:
       'Ranking de páginas do site por views, conversões ou receita em um período.',
@@ -237,6 +289,12 @@ export async function executeTool(
       return meta_ads_campaign_insights(i);
     case 'meta_ads_creative_insights':
       return meta_ads_creative_insights(i);
+    case 'yampi_get_orders':
+      return yampi_get_orders(i);
+    case 'yampi_get_top_customers':
+      return yampi_get_top_customers(i);
+    case 'yampi_search_products':
+      return yampi_search_products(i);
     default:
       return `ERRO: Tool "${name}" não reconhecida.`;
   }
