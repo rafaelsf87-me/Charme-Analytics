@@ -4,7 +4,7 @@ import { formatBRL, formatBRLFromMicros, formatPercent, compactTable } from '@/l
 const TIMEOUT_MS = 30_000;
 const CUSTOMER_ID = () => (process.env.GOOGLE_ADS_CUSTOMER_ID ?? '').replace(/-/g, '');
 const ENDPOINT = () =>
-  `https://googleads.googleapis.com/v17/customers/${CUSTOMER_ID()}/googleAds:searchStream`;
+  `https://googleads.googleapis.com/v18/customers/${CUSTOMER_ID()}/googleAds:searchStream`;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ async function fetchWithRetry(gaqlQuery: string, attempt = 1): Promise<Response>
       headers: {
         Authorization: `Bearer ${token}`,
         'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
-        'login-customer-id': CUSTOMER_ID(),
+        'login-customer-id': (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? '').replace(/-/g, '') || CUSTOMER_ID(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ query: gaqlQuery }),
@@ -173,8 +173,8 @@ export async function google_ads_campaign_report(
     const res = await fetchWithRetry(gaql);
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => `HTTP ${res.status}`);
-      throw new Error(errText);
+      const errText = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${errText.slice(0, 300)}`);
     }
 
     const rows = await parseStreamResponse(res);
