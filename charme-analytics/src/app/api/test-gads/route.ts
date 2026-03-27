@@ -34,7 +34,7 @@ export async function GET() {
   const accessToken: string = tokenData.access_token;
 
   // Testa chamada real à API
-  const url = `https://googleads.googleapis.com/v18/customers/${customerId}/googleAds:searchStream`;
+  const url = `https://googleads.googleapis.com/v20/customers/${customerId}/googleAds:searchStream`;
   const gaql = `SELECT campaign.name, metrics.cost_micros FROM campaign WHERE segments.date BETWEEN '2026-03-01' AND '2026-03-26' LIMIT 1`;
 
   const apiRes = await fetch(url, {

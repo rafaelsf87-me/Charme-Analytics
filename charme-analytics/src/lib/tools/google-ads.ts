@@ -4,7 +4,7 @@ import { formatBRL, formatBRLFromMicros, formatPercent, compactTable } from '@/l
 const TIMEOUT_MS = 30_000;
 const CUSTOMER_ID = () => (process.env.GOOGLE_ADS_CUSTOMER_ID ?? '').replace(/-/g, '');
 const ENDPOINT = () =>
-  `https://googleads.googleapis.com/v18/customers/${CUSTOMER_ID()}/googleAds:searchStream`;
+  `https://googleads.googleapis.com/v20/customers/${CUSTOMER_ID()}/googleAds:searchStream`;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
