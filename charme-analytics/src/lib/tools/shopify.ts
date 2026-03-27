@@ -135,38 +135,52 @@ export async function shopify_get_orders(input: OrdersInput): Promise<string> {
   const validErr = validateDates(date_from, date_to);
   if (validErr) return `ERRO [Shopify]: ${validErr}`;
 
-  const safeLimit = Math.min(Math.max(1, limit), 100);
-
-  const query = `{
-    orders(first: ${safeLimit}, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: true) {
-      edges {
-        node {
-          name
-          createdAt
-          totalPriceSet { shopMoney { amount } }
-          customer { firstName lastName email }
-          lineItems(first: 3) {
-            edges { node { title quantity } }
-          }
-        }
-      }
-    }
-  }`;
+  const displayLimit = Math.min(Math.max(1, limit), 100);
 
   try {
-    const data = await shopifyQuery<ShopifyOrdersData>(query);
-    const orders = data.orders.edges.map((e) => e.node);
+    // Paginação completa para totais corretos — exibe só os primeiros `displayLimit`
+    type OrderNode = ShopifyOrdersData['orders']['edges'][0]['node'];
+    const allOrders: OrderNode[] = [];
+    let cursor: string | null = null;
+    let hasNextPage = true;
 
-    if (orders.length === 0) {
+    while (hasNextPage) {
+      const afterClause = cursor ? `, after: "${cursor}"` : '';
+      const q = `{
+        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to} financial_status:paid", sortKey: CREATED_AT, reverse: true) {
+          pageInfo { hasNextPage endCursor }
+          edges {
+            node {
+              name
+              createdAt
+              totalPriceSet { shopMoney { amount } }
+              customer { firstName lastName email }
+              lineItems(first: 3) {
+                edges { node { title quantity } }
+              }
+            }
+          }
+        }
+      }`;
+      const data = await shopifyQuery<ShopifyOrdersData>(q);
+      allOrders.push(...data.orders.edges.map((e) => e.node));
+      hasNextPage = data.orders.pageInfo?.hasNextPage ?? false;
+      cursor = data.orders.pageInfo?.endCursor ?? null;
+    }
+
+    if (allOrders.length === 0) {
       return `[SHOPIFY] Nenhum pedido encontrado no período ${date_from} a ${date_to}.`;
     }
 
-    const total = orders.reduce(
+    // Totais calculados sobre todos os pedidos
+    const totalReceita = allOrders.reduce(
       (sum, o) => sum + parseFloat(o.totalPriceSet.shopMoney.amount),
       0
     );
+    const ticketMedio = totalReceita / allOrders.length;
 
-    const rows = orders.map((o, i) => {
+    // Exibe apenas os primeiros `displayLimit` na tabela
+    const rows = allOrders.slice(0, displayLimit).map((o, i) => {
       const cliente = o.customer
         ? `${o.customer.firstName ?? ''} ${o.customer.lastName ?? ''}`.trim() || o.customer.email
         : 'N/D';
@@ -188,7 +202,15 @@ export async function shopify_get_orders(input: OrdersInput): Promise<string> {
       rows
     );
 
-    return `[SHOPIFY] Pedidos ${date_from} a ${date_to} (${orders.length} resultados)\n${table}\nTotal: ${formatBRL(total)}`;
+    const suffix = allOrders.length > displayLimit
+      ? ` (exibindo ${displayLimit} de ${allOrders.length})`
+      : ` (${allOrders.length} pedidos)`;
+
+    return (
+      `[SHOPIFY] Pedidos ${date_from} a ${date_to}${suffix}\n` +
+      `${table}\n` +
+      `Total: ${allOrders.length} pedidos | Receita: ${formatBRL(totalReceita)} | Ticket médio: ${formatBRL(ticketMedio)}`
+    );
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('Timeout')) {
