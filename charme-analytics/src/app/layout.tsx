@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Charme Analytics",
   description: "Central de Dados — Charme do Detalhe",
+  icons: { icon: '/logo.png' },
 };
 
 export default function RootLayout({

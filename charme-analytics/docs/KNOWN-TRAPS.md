@@ -145,3 +145,12 @@ Campanhas apontam pra `/collections/...` (genérica). Não dá pra filtrar por p
 | "Conversões" | Qualquer evento marcado como conversão (não só compras) |
 
 ### Regra: sempre especificar qual métrica está usando e o que ela mede.
+
+---
+
+## 11. UTMs — Só Confiáveis para CRM
+
+UTMs da Charme do Detalhe são configuradas APENAS para email e WhatsApp.
+Para Meta Ads e Google Ads, UTMs estão inconsistentes.
+NUNCA usar utm_source/utm_medium/utm_campaign do GA4 para atribuir tráfego de mídia paga.
+Usar APIs de cada plataforma diretamente.

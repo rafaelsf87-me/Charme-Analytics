@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { FiltrosForm, type FiltrosState } from './filtros-form';
 import { CriativosTable } from './criativos-table';
 import type { CreativeRow } from '@/app/api/criativos/route';
@@ -68,24 +69,25 @@ export function CriativosView() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50">
+    <div className="flex flex-col min-h-screen bg-charme-bg">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-zinc-100 shrink-0">
+      <header className="flex items-center justify-between px-6 py-4 bg-charme border-b border-charme/20 shrink-0">
         <div className="flex items-center gap-3">
           {mode === 'results' ? (
             <button
               onClick={() => setMode('filters')}
-              className="text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+              className="text-sm text-white/60 hover:text-white transition-colors"
             >
               ← Voltar aos Filtros
             </button>
           ) : (
-            <Link href="/home" className="text-sm text-zinc-400 hover:text-zinc-600 transition-colors">
+            <Link href="/home" className="text-sm text-white/60 hover:text-white transition-colors">
               ← Voltar
             </Link>
           )}
-          <span className="text-zinc-200">|</span>
-          <span className="font-semibold text-zinc-900">Relatório de Criativos</span>
+          <span className="text-white/30">|</span>
+          <Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-md" />
+          <span className="font-semibold text-white">Relatório de Criativos</span>
         </div>
       </header>
 
@@ -95,7 +97,7 @@ export function CriativosView() {
         {/* Loading */}
         {loading && (
           <div className="flex flex-col items-center justify-center flex-1 gap-3">
-            <div className="w-8 h-8 border-2 border-zinc-300 border-t-zinc-700 rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-charme-border border-t-charme rounded-full animate-spin" />
             <p className="text-sm text-zinc-500">{loadingMsg}</p>
           </div>
         )}

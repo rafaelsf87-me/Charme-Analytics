@@ -46,9 +46,9 @@ export function LoadingIndicator({ platforms = [], phase = 'thinking' }: Loading
       {/* Fase atual */}
       <div className="flex items-center gap-2 text-sm text-zinc-500">
         <span className="flex gap-0.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:-0.3s]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:-0.15s]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-bounce" />
+          <span className="w-1.5 h-1.5 rounded-full bg-charme animate-bounce [animation-delay:-0.3s]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-charme animate-bounce [animation-delay:-0.15s]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-charme animate-bounce" />
         </span>
         <span>
           {phaseLabel}

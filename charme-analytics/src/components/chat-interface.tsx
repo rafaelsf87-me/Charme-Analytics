@@ -202,7 +202,7 @@ export function ChatInterface() {
                   <button
                     key={s.text}
                     onClick={() => sendMessage(s.text)}
-                    className="text-left text-base p-3 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 hover:border-zinc-300 transition-colors text-zinc-700 leading-snug"
+                    className="text-left text-base p-3 rounded-xl border border-charme-border bg-white hover:bg-charme-card hover:border-charme/30 transition-colors text-charme-text leading-snug"
                   >
                     <span className="mr-1.5">{s.icon}</span>
                     {s.text}
@@ -227,7 +227,7 @@ export function ChatInterface() {
       </div>
 
       {/* Input fixo */}
-      <div className="border-t border-zinc-100 bg-white px-4 py-3">
+      <div className="border-t border-charme-border bg-white px-4 py-3">
         <div className="max-w-3xl mx-auto flex gap-2">
           <Input
             ref={inputRef}
@@ -246,6 +246,7 @@ export function ChatInterface() {
             <Button
               onClick={() => sendMessage(input)}
               disabled={!input.trim()}
+              className="bg-charme hover:bg-charme-hover text-white"
             >
               Enviar
             </Button>

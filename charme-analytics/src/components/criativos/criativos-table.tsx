@@ -139,8 +139,8 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="bg-zinc-50 border-b border-zinc-200">
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-zinc-500 w-8">#</th>
+            <tr className="bg-charme border-b border-charme/20">
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-white/70 w-8">#</th>
               {COLS.map(col => {
                 const isNarrow = ['ctr','conversions','roas','cpa','viewConversions'].includes(col.key as string);
                 const isWide = col.key === 'campaignName';
@@ -149,9 +149,9 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
                     key={col.key}
                     onClick={() => !['adName','platform'].includes(col.key as string) && handleSort(col.key)}
                     className={[
-                      'px-3 py-2.5 text-xs font-semibold text-zinc-500 whitespace-nowrap select-none',
+                      'px-3 py-2.5 text-xs font-semibold text-white/80 whitespace-nowrap select-none',
                       col.align === 'right' ? 'text-right' : 'text-left',
-                      !['adName','platform'].includes(col.key as string) ? 'cursor-pointer hover:text-zinc-800' : '',
+                      !['adName','platform'].includes(col.key as string) ? 'cursor-pointer hover:text-white' : '',
                       isNarrow ? 'w-16' : '',
                       isWide ? 'min-w-[180px]' : '',
                     ].join(' ')}
