@@ -3,8 +3,9 @@ import {
   shopify_get_orders,
   shopify_get_top_customers,
   shopify_get_products,
+  shopify_get_top_products,
 } from './shopify';
-import { ga4_run_report, ga4_get_top_pages } from './ga4';
+import { ga4_run_report, ga4_get_top_pages, ga4_get_item_report } from './ga4';
 import { google_ads_campaign_report, google_ads_search_query } from './google-ads';
 import { meta_ads_campaign_insights, meta_ads_creative_insights } from './meta-ads';
 import {
@@ -66,6 +67,29 @@ export const toolDefinitions: Anthropic.Tool[] = [
           type: 'string',
           enum: ['revenue', 'orders'],
           description: 'Ordenar por receita total (revenue) ou nº de pedidos (orders)',
+        },
+      },
+      required: ['date_from', 'date_to'],
+    },
+  },
+  {
+    name: 'shopify_get_top_products',
+    description:
+      'Ranking de produtos mais vendidos por receita ou quantidade, a partir de TODOS os pedidos pagos do período (paginação completa — sem limite de 100). Use para "top produtos", "produtos mais vendidos", "faturamento por produto", "ranking de vendas". Suporta filtro por fragmento de título (ex: "ofá" para sofás, "adeira" para cadeiras). NÃO use para ATC ou views — essas métricas são do GA4.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date_from: { type: 'string', description: 'Data inicial YYYY-MM-DD' },
+        date_to: { type: 'string', description: 'Data final YYYY-MM-DD' },
+        limit: { type: 'number', description: 'Número de produtos no ranking (1-100, padrão: 20)' },
+        sort_by: {
+          type: 'string',
+          enum: ['revenue', 'quantity'],
+          description: 'Ordenar por receita (revenue, padrão) ou unidades vendidas (quantity)',
+        },
+        product_filter: {
+          type: 'string',
+          description: 'Fragmento de texto para filtrar por título. Para sofá use "ofá", cadeira use "adeira". Case-insensitive.',
         },
       },
       required: ['date_from', 'date_to'],
@@ -240,6 +264,46 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'ga4_get_item_report',
+    description:
+      'Performance de produtos individuais no GA4 por itemName. Use SEMPRE que a pergunta envolver ATC, checkout, views ou conversões por produto específico. Métricas item-scoped: itemsViewed, itemsAddedToCart, itemsPurchased, itemRevenue. NÃO use ga4_run_report com addToCarts para análise de produto. product_filter usa OR automático com/sem acento + case-insensitive: "sofá" captura Sofá/SOFÁ/sofa mas NÃO Almofada. Usar NOME COMPLETO da categoria. Para "melhores e piores", usar ranking_mode: "both". Para "taxa checkout" (conversão do carrinho), usar sort_by: "checkout". Taxa Checkout = Compras ÷ ATC (eventos corrigidos para cadeira) × 100.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date_from: { type: 'string', description: 'Data inicial YYYY-MM-DD' },
+        date_to: { type: 'string', description: 'Data final YYYY-MM-DD' },
+        product_filter: {
+          type: 'string',
+          description: 'Termo de categoria para filtrar itemName. Usar nome completo: "sofá", "cadeira", "cortina", "almofada". O sistema aplica OR com variantes acento/sem acento + case-insensitive automaticamente.',
+        },
+        limit: { type: 'number', description: 'Número de produtos por grupo (1-50, padrão: 10). Em ranking_mode "both", retorna limit melhores + limit piores.' },
+        sort_by: {
+          type: 'string',
+          enum: ['views', 'atc', 'purchases', 'revenue', 'checkout'],
+          description: 'Ordenar por: revenue (PADRÃO), views, atc (taxa ATC %), purchases, checkout (taxa checkout = compras÷ATC×100). ATC e checkout sempre como taxa % — nunca contagem bruta.',
+        },
+        ranking_mode: {
+          type: 'string',
+          enum: ['best', 'worst', 'both'],
+          description: 'best (padrão) = top N melhores. worst = top N piores. both = top N melhores + top N piores no mesmo relatório. Usar "both" quando o usuário pedir "melhores e piores".',
+        },
+        min_views: {
+          type: 'number',
+          description: 'Mínimo de views (itemsViewed) para incluir produto. Padrão: 500.',
+        },
+        highlight_min_views: {
+          type: 'number',
+          description: 'OBRIGATÓRIO em toda análise de produto. Produtos com views acima desse valor aparecem em "Produtos Destaque a Considerar". Usar conforme período: 7D→1000, 15D→2000, 30D→3000, 60D→5000, 90D→7000.',
+        },
+        highlight_min_revenue: {
+          type: 'number',
+          description: 'OBRIGATÓRIO em toda análise de produto. Produtos com receita acima desse valor aparecem em "Produtos Destaque a Considerar". Usar conforme período: 7D→2000, 15D→3000, 30D→4000, 60D→6000, 90D→8000.',
+        },
+      },
+      required: ['date_from', 'date_to'],
+    },
+  },
+  {
     name: 'ga4_get_top_pages',
     description:
       'Ranking de páginas do site por views, conversões ou receita em um período.',
@@ -275,10 +339,14 @@ export async function executeTool(
       return shopify_get_orders(i);
     case 'shopify_get_top_customers':
       return shopify_get_top_customers(i);
+    case 'shopify_get_top_products':
+      return shopify_get_top_products(i);
     case 'shopify_get_products':
       return shopify_get_products(i);
     case 'ga4_run_report':
       return ga4_run_report(i);
+    case 'ga4_get_item_report':
+      return ga4_get_item_report(i);
     case 'ga4_get_top_pages':
       return ga4_get_top_pages(i);
     case 'google_ads_campaign_report':

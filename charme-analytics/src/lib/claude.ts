@@ -14,9 +14,11 @@ const MAX_TOKENS = 4096;
 const TOOL_PLATFORM_LABEL: Record<string, string> = {
   shopify_get_orders: 'Shopify',
   shopify_get_top_customers: 'Shopify',
+  shopify_get_top_products: 'Shopify',
   shopify_get_products: 'Shopify',
   ga4_run_report: 'GA4',
   ga4_get_top_pages: 'GA4',
+  ga4_get_item_report: 'GA4',
   google_ads_campaign_report: 'Google Ads',
   google_ads_search_query: 'Google Ads',
   meta_ads_campaign_insights: 'Meta Ads',
@@ -56,28 +58,42 @@ function selectTools(messages: Anthropic.MessageParam[]): Anthropic.Tool[] {
 
   const selected: Anthropic.Tool[] = [];
 
-  if (match(msg, ['cliente', 'pedido', 'receita', 'faturamento', 'produto', 'vend', 'ticket', 'top', 'compra', 'recompra', 'ltv', 'shopify'])) {
+  // Guardrail: ATC/views são comportamento de site → GA4 APENAS, nunca Shopify
+  const isBehaviorQuery = match(msg, ['atc', 'add to cart', 'views', 'view', 'pageview', 'sessão', 'sessões', 'bounce', 'tempo na página', 'comportamento', 'engajamento', 'navegação']);
+
+  // GA4 — comportamento no site, métricas de funil por produto
+  if (isBehaviorQuery || match(msg, ['tráfego', 'analytics', 'ga4', 'funil', 'carrinho', 'página', 'orgânico', 'canal', 'fonte', 'conversão do site', 'taxa de conversão'])) {
+    selected.push(...GA4_TOOLS);
+  }
+
+  // Shopify — vendas, pedidos, receita, produtos mais vendidos (SÓ se não for query de comportamento)
+  if (!isBehaviorQuery && match(msg, ['cliente', 'pedido', 'receita', 'faturamento', 'vend', 'ticket', 'compra', 'recompra', 'ltv', 'shopify', 'produto mais vendido', 'top produto', 'quantidade vendida', 'unidades vendidas'])) {
     selected.push(...SHOPIFY_TOOLS);
   }
+
+  // Yampi — dados históricos pré-Shopify
   if (match(msg, ['históric', 'yampi', '2023', '2024', 'todos os tempos', 'antes', 'migração', 'antigo'])) {
     selected.push(...YAMPI_TOOLS);
   }
-  if (match(msg, ['sessão', 'sessões', 'tráfego', 'analytics', 'ga4', 'funil', 'atc', 'add to cart', 'carrinho', 'página', 'views', 'orgânico', 'canal', 'fonte'])) {
-    selected.push(...GA4_TOOLS);
-  }
-  if (match(msg, ['google ads', 'google', 'keyword', 'pmax', 'demand gen', 'display', 'shopping', 'gaql'])) {
+
+  // Google Ads — mídia paga Google
+  if (match(msg, ['google ads', 'google ad', 'keyword', 'pmax', 'demand gen', 'display', 'shopping', 'gaql', 'roas google', 'cpa google'])) {
     selected.push(...GADS_TOOLS);
   }
-  if (match(msg, ['meta', 'facebook', 'instagram', 'criativo', 'adset', 'anúncio'])) {
+
+  // Meta Ads — mídia paga Meta/Facebook/Instagram
+  if (match(msg, ['meta', 'facebook', 'instagram', 'criativo', 'adset', 'anúncio', 'roas meta', 'cpa meta'])) {
     selected.push(...META_TOOLS);
   }
+
+  // Web search — concorrência e mercado
   if (match(msg, ['concorrente', 'mercado', 'benchmark', 'preço relativo', 'tendência', 'google trends', 'casa das capas', 'ok darling'])) {
     selected.push(...WEB_SEARCH_TOOL);
   }
 
-  // Pergunta genérica de performance inclui todas as fontes de dados
-  if (match(msg, ['relatório', 'performance', 'compare', 'roas', 'cpa', 'ctr'])) {
-    selected.push(...SHOPIFY_TOOLS, ...GA4_TOOLS, ...GADS_TOOLS, ...META_TOOLS);
+  // ROAS/CPA genérico → ambas as plataformas de ads + Shopify para validar
+  if (match(msg, ['roas', 'cpa', 'cpm', 'ctr de ads', 'performance de mídia'])) {
+    selected.push(...GADS_TOOLS, ...META_TOOLS, ...SHOPIFY_TOOLS);
   }
 
   // Fallback: nenhum match claro → envia todas as tools analíticas

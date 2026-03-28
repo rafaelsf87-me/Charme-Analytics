@@ -1,8 +1,22 @@
 // Override do componente table do react-markdown
 // Zebra striping, bordas sutis, responsivo, header destacado, números à direita
 
-function isNumeric(value: string): boolean {
-  return /^-?[\d.,]+%?$/.test(value.trim());
+import { isValidElement } from 'react';
+
+function extractText(node: React.ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (isValidElement(node) && node.props && (node.props as { children?: React.ReactNode }).children !== undefined) {
+    return extractText((node.props as { children?: React.ReactNode }).children);
+  }
+  return '';
+}
+
+function isNumeric(node: React.ReactNode): boolean {
+  const text = extractText(node).trim();
+  // Aceita: números, %, +/-, R$, espaços, vírgulas, pontos
+  return /^[+\-]?(?:R\$\s?)?\d[\d.,]*\s*%?$/.test(text) || /^[+\-]\d[\d.,]*%?$/.test(text);
 }
 
 export function DataTable({ children }: { children?: React.ReactNode }) {
@@ -34,11 +48,11 @@ export function DataTableRow({ children }: { children?: React.ReactNode }) {
 }
 
 export function DataTableHeaderCell({ children }: { children?: React.ReactNode }) {
-  const text = String(children ?? '');
+  const numeric = isNumeric(children);
   return (
     <th
       className={`px-3 py-2 font-semibold whitespace-nowrap ${
-        isNumeric(text) ? 'text-right' : 'text-left'
+        numeric ? 'text-right' : 'text-left'
       }`}
     >
       {children}
@@ -47,11 +61,11 @@ export function DataTableHeaderCell({ children }: { children?: React.ReactNode }
 }
 
 export function DataTableCell({ children }: { children?: React.ReactNode }) {
-  const text = String(children ?? '');
+  const numeric = isNumeric(children);
   return (
     <td
       className={`px-3 py-2 text-zinc-700 whitespace-nowrap ${
-        isNumeric(text) ? 'text-right tabular-nums' : 'text-left'
+        numeric ? 'text-right tabular-nums' : 'text-left'
       }`}
     >
       {children}

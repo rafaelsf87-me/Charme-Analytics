@@ -161,7 +161,7 @@ export async function shopify_get_orders(input: OrdersInput): Promise<string> {
               displayFinancialStatus
               totalPriceSet { shopMoney { amount } }
               customer { firstName lastName email }
-              lineItems(first: 3) {
+              lineItems(first: 20) {
                 edges { node { title quantity } }
               }
             }
@@ -363,6 +363,117 @@ export async function shopify_get_top_customers(
       return `ERRO [Shopify]: Timeout ao buscar clientes. Sugestão: tente um período menor.`;
     }
     return `ERRO [Shopify]: ${msg}. Sugestão: verifique as credenciais ou tente novamente.`;
+  }
+}
+
+// ─── shopify_get_top_products ────────────────────────────────────────────────
+
+interface TopProductsInput {
+  date_from: string;
+  date_to: string;
+  limit?: number;
+  sort_by?: 'quantity' | 'revenue';
+  product_filter?: string; // fragmento de texto para filtrar por título (ex: "ofá", "adeira")
+}
+
+/**
+ * Agrega vendas por produto a partir de todos os pedidos do período.
+ * Pagina todos os pedidos (sem limite de 100), captura até 20 line items por pedido.
+ * Use para "top produtos mais vendidos", "faturamento por produto", "ranking de vendas".
+ */
+export async function shopify_get_top_products(input: TopProductsInput): Promise<string> {
+  const { date_from, date_to, limit = 20, sort_by = 'revenue', product_filter } = input;
+
+  const validErr = validateDates(date_from, date_to);
+  if (validErr) return `ERRO [Shopify]: ${validErr}`;
+
+  const safeLimit = Math.min(Math.max(1, limit), 100);
+
+  try {
+    type OrderNode = {
+      displayFinancialStatus: string;
+      lineItems: { edges: Array<{ node: { title: string; quantity: number; discountedTotalSet: { shopMoney: { amount: string } } } }> };
+    };
+
+    const allOrders: OrderNode[] = [];
+    let cursor: string | null = null;
+    let hasNextPage = true;
+
+    while (hasNextPage) {
+      const afterClause: string = cursor ? `, after: "${cursor}"` : '';
+      const q: string = `{
+        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to}", sortKey: CREATED_AT) {
+          pageInfo { hasNextPage endCursor }
+          edges {
+            node {
+              displayFinancialStatus
+              lineItems(first: 20) {
+                edges { node { title quantity discountedTotalSet { shopMoney { amount } } } }
+              }
+            }
+          }
+        }
+      }`;
+      type TopProductsPage = { orders: { pageInfo: { hasNextPage: boolean; endCursor: string }; edges: Array<{ node: OrderNode }> } };
+      const data: TopProductsPage = await shopifyQuery<TopProductsPage>(q);
+      allOrders.push(...data.orders.edges.map((e: { node: OrderNode }) => e.node));
+      hasNextPage = data.orders.pageInfo?.hasNextPage ?? false;
+      cursor = data.orders.pageInfo?.endCursor ?? null;
+    }
+
+    // Filtra apenas pedidos pagos
+    const paid = allOrders.filter(o => PAID_STATUSES.has(o.displayFinancialStatus));
+
+    if (paid.length === 0) {
+      return `[SHOPIFY] Nenhum pedido pago encontrado no período ${date_from} a ${date_to}.`;
+    }
+
+    // Agrega por título de produto
+    const map = new Map<string, { quantity: number; revenue: number }>();
+    const filterLower = product_filter?.toLowerCase();
+
+    for (const order of paid) {
+      for (const { node: item } of order.lineItems.edges) {
+        if (filterLower && !item.title.toLowerCase().includes(filterLower)) continue;
+        const existing = map.get(item.title);
+        const rev = parseFloat(item.discountedTotalSet?.shopMoney?.amount ?? '0');
+        if (existing) {
+          existing.quantity += item.quantity;
+          existing.revenue += rev;
+        } else {
+          map.set(item.title, { quantity: item.quantity, revenue: rev });
+        }
+      }
+    }
+
+    if (map.size === 0) {
+      return `[SHOPIFY] Nenhum produto encontrado${product_filter ? ` com filtro "${product_filter}"` : ''} no período ${date_from} a ${date_to}.`;
+    }
+
+    const sorted = Array.from(map.entries())
+      .sort((a, b) => sort_by === 'quantity' ? b[1].quantity - a[1].quantity : b[1].revenue - a[1].revenue)
+      .slice(0, safeLimit);
+
+    const rows = sorted.map(([title, data], i) => [
+      String(i + 1),
+      title,
+      String(data.quantity),
+      formatBRL(data.revenue),
+      data.quantity > 0 ? formatBRL(data.revenue / data.quantity) : 'N/D',
+    ]);
+
+    const table = compactTable(['#', 'Produto', 'Unidades', 'Receita', 'Preço Médio'], rows);
+
+    const filterNote = product_filter ? ` | Filtro: "${product_filter}"` : '';
+    return (
+      `[SHOPIFY] Top ${safeLimit} produtos por ${sort_by === 'quantity' ? 'unidades vendidas' : 'receita'} (${date_from} a ${date_to}${filterNote})\n` +
+      `Total pedidos pagos analisados: ${paid.length}\n` +
+      `${table}`
+    );
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes('Timeout')) return `ERRO [Shopify]: Timeout. Tente um período menor.`;
+    return `ERRO [Shopify]: ${msg}`;
   }
 }
 
