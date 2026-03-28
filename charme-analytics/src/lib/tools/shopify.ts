@@ -353,6 +353,7 @@ export async function shopify_get_top_customers(
     const totalRev = sorted.reduce((s, c) => s + c.totalRevenue, 0);
     return (
       `ℹ️ Pedidos consecutivos (≤2 dias) do mesmo cliente foram mesclados como compra única.\n` +
+      `ℹ️ Receita = totalPrice (produtos + frete + impostos − descontos). Diverge de get_top_products que usa valor líquido sem frete.\n` +
       `[SHOPIFY] Top ${safeLimit} clientes por ${sort_by === 'revenue' ? 'receita' : 'nº compras'} (${date_from} a ${date_to})\n` +
       `${table}\n` +
       `Total: ${sorted.length} clientes | Receita agregada: ${formatBRL(totalRev)}`
@@ -466,6 +467,7 @@ export async function shopify_get_top_products(input: TopProductsInput): Promise
 
     const filterNote = product_filter ? ` | Filtro: "${product_filter}"` : '';
     return (
+      `ℹ️ Receita = valor líquido de produtos após descontos, sem frete. Diverge de get_orders/get_top_customers que usam totalPrice (inclui frete).\n` +
       `[SHOPIFY] Top ${safeLimit} produtos por ${sort_by === 'quantity' ? 'unidades vendidas' : 'receita'} (${date_from} a ${date_to}${filterNote})\n` +
       `Total pedidos pagos analisados: ${paid.length}\n` +
       `${table}`

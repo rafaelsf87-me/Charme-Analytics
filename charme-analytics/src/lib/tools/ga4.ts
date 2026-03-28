@@ -282,14 +282,17 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
     const rows = data.rows ?? [];
 
     if (rows.length === 0) {
-      // Sugere fragmento sem primeira letra para contornar case-sensitivity do GA4
       let suggestion = '';
       if (filters) {
         const rawTerm = filters.split(' ').pop() ?? '';
-        const termLower = rawTerm.toLowerCase().replace(/[àáâãä]/g, 'a').replace(/[éê]/g, 'e');
-        const knownFragment = GA4_SAFE_FRAGMENTS[termLower];
-        const fragment = knownFragment ?? ga4Fragment(rawTerm);
-        suggestion = ` ⚠️ Filtro GA4 é case-sensitive. Tente o fragmento "${fragment}" em vez de "${rawTerm}" — captura variações com/sem acento e maiúsculas.`;
+        const field = filters.split(' ')[0] ?? '';
+        // Para filtros de URL/pagePath: sanitizar (lowercase, sem acentos) resolve case-sensitivity
+        // Para itemName: usar ga4_get_item_report que tem OR automático com/sem acento
+        if (field.toLowerCase().includes('pagepath') || field.toLowerCase().includes('url') || field.toLowerCase().includes('page')) {
+          suggestion = ` ⚠️ Filtro de URL é case-sensitive no GA4. Tente "${rawTerm.toLowerCase()}" (lowercase sem acentos).`;
+        } else {
+          suggestion = ` ⚠️ Nenhum dado encontrado para "${rawTerm}". Verifique se o termo está correto ou use ga4_get_item_report com product_filter para filtros de produto (suporta OR automático com/sem acento).`;
+        }
       }
       return `[GA4] Nenhum resultado para o período ${formatDate(date_from)} a ${formatDate(date_to)}.${suggestion}`;
     }

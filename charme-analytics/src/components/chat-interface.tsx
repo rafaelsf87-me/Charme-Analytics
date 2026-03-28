@@ -89,12 +89,15 @@ function parseProgress(chunk: string): { events: ProgressEvent[]; text: string }
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
+const CONTEXT_LIMIT = 6; // nº de respostas do assistente antes de alertar
+
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [platforms, setPlatforms] = useState<PlatformStatus[]>([]);
   const [loadingPhase, setLoadingPhase] = useState<'thinking' | 'querying' | 'assembling'>('thinking');
+  const [contextAlertDismissed, setContextAlertDismissed] = useState(false);
 
   // Período pré-selecionado
   const [preset, setPreset] = useState<PresetKey | null>(null);
@@ -142,6 +145,7 @@ export function ChatInterface() {
     setLoading(true);
     setPlatforms([]);
     setLoadingPhase('thinking');
+    setContextAlertDismissed(false); // reaparecer alerta após nova mensagem se ainda no limite
 
     try {
       const payload = updatedMessages.slice(-10);
@@ -269,6 +273,39 @@ export function ChatInterface() {
           ))}
 
           {loading && <LoadingIndicator platforms={platforms} phase={loadingPhase} />}
+
+          {/* Alerta de contexto no limite */}
+          {!loading &&
+           !contextAlertDismissed &&
+           messages.filter(m => m.role === 'assistant').length >= CONTEXT_LIMIT && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span className="text-base shrink-0">⚠️</span>
+              <div className="flex-1 min-w-0">
+                <span className="font-medium">Contexto no limite</span>
+                {' — '}posso começar a alucinar.
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button
+                    onClick={() => sendMessage('Gere um resumo executivo em tópicos do que foi analisado nessa conversa.')}
+                    className="px-3 py-1 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors"
+                  >
+                    Resumo Final
+                  </button>
+                  <button
+                    onClick={() => { setMessages([]); setContextAlertDismissed(false); }}
+                    className="px-3 py-1 rounded-lg border border-amber-400 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors"
+                  >
+                    Nova Conversa
+                  </button>
+                  <button
+                    onClick={() => setContextAlertDismissed(true)}
+                    className="px-3 py-1 rounded-lg text-amber-600 text-xs hover:text-amber-800 transition-colors"
+                  >
+                    Ignorar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div ref={bottomRef} />
         </div>

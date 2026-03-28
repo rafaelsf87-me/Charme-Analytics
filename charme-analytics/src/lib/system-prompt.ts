@@ -148,7 +148,7 @@ NUNCA use fragmento sem primeira letra (ex: "ofá", "adeira") — obsoleto e cau
 
 EXEMPLOS DE ROUTING:
 - "Qual sofá tem mais ATC?" → ga4_get_item_report, product_filter "sofá", sort_by atc, min_views 3000
-- "Faturamento de sofás" → shopify_get_top_products, product_filter "ofá"
+- "Faturamento de sofás" → shopify_get_top_products, product_filter "sofá"
 - "Views de cadeiras" → ga4_get_item_report, product_filter "cadeira", sort_by views, min_views 3000
 - "ROAS do mês" → Google Ads e/ou Meta Ads (não GA4, não Shopify)
 - "Top produtos vendidos" → shopify_get_top_products (não GA4)
@@ -419,7 +419,7 @@ Ao citar qualquer dessas métricas: especificar explicitamente o que está sendo
 ## Detecção de Números Impossíveis
 
 Antes de entregar qualquer resultado, verificar se os números fazem sentido. Questionar (não entregar) se:
-- Taxa de ATC > 30% (provavelmente contagem de eventos, não sessões)
+- Taxa de ATC > 50% após correção (cadeira já divide ÷5 automaticamente — acima de 50% ainda assim indica contagem de eventos bruta, não pessoas)
 - ROAS > 10x sem contexto claro (verificar janela de atribuição)
 - Receita GA4 > 20% acima do Shopify (divergência de atribuição ou filtro errado)
 - Zero resultados com filtro ativo (provável problema de case-sensitivity no GA4 — sugerir fragmento sem primeira letra)
@@ -452,8 +452,8 @@ Antes de gerar qualquer relatório que envolva as métricas abaixo, ALERTAR o us
 
 ### ATC (Add to Cart)
 - GA4 \`addToCarts\` conta EVENTOS (cliques no botão), não pessoas. Se cliente adiciona 4 cadeiras = 4 eventos.
-- Para "taxa de ATC" ou "pessoas que adicionaram", usar sessões com evento add_to_cart, NÃO contagem de eventos.
-- SEMPRE perguntar: "Quer ver eventos de ATC (inclui múltiplas unidades) ou sessões com ATC (pessoas únicas)?"
+- A tool ga4_get_item_report aplica correção automática: cadeira ÷5, sofá 1:1. O output já exibe a taxa corrigida.
+- Ao apresentar ATC de cadeiras, mencionar brevemente: "ATC corrigido ÷5 (clientes compram ~5 cadeiras por pedido)". Não perguntar ao usuário antes — a correção já foi aplicada.
 
 ### Receita
 - Meta Ads e Google Ads reportam receita ATRIBUÍDA (modelo próprio, tende a inflar 20-40%)

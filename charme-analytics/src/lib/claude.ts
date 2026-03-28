@@ -58,8 +58,8 @@ function selectTools(messages: Anthropic.MessageParam[]): Anthropic.Tool[] {
 
   const selected: Anthropic.Tool[] = [];
 
-  // Guardrail: ATC/views são comportamento de site → GA4 APENAS, nunca Shopify
-  const isBehaviorQuery = match(msg, ['atc', 'add to cart', 'views', 'view', 'pageview', 'sessão', 'sessões', 'bounce', 'tempo na página', 'comportamento', 'engajamento', 'navegação']);
+  // Guardrail: ATC/views/checkout são comportamento de site → GA4 APENAS, nunca Shopify
+  const isBehaviorQuery = match(msg, ['atc', 'add to cart', 'views', 'view', 'pageview', 'sessão', 'sessões', 'bounce', 'tempo na página', 'comportamento', 'engajamento', 'navegação', 'checkout', 'taxa checkout', 'taxa de checkout', 'taxa payment', 'payment']);
 
   // GA4 — comportamento no site, métricas de funil por produto
   if (isBehaviorQuery || match(msg, ['tráfego', 'analytics', 'ga4', 'funil', 'carrinho', 'página', 'orgânico', 'canal', 'fonte', 'conversão do site', 'taxa de conversão'])) {
