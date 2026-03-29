@@ -438,29 +438,29 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
     if (isCheckout)             processed.sort((a, b) => b.checkoutRate - a.checkoutRate);
     if (ranking_mode === 'worst') processed.reverse();
 
-    // ── Médias globais para marcadores 🟢🔴 ────────────────────────────────
-    const avgAtcRate      = processed.reduce((s, r) => s + r.atcRate, 0)      / (processed.length || 1);
-    const avgCheckoutRate = processed.reduce((s, r) => s + r.checkoutRate, 0) / (processed.length || 1);
-    const avgRevenue      = processed.reduce((s, r) => s + r.revenue, 0)      / (processed.length || 1);
-
-    // 🟢 Alta taxa + alta receita | 🔴 Alta receita + baixa taxa
+    // ── Rank-based markers 🟢🔴 (top/bottom 30%) ──────────────────────────
     const getRateForMarker = (r: typeof processed[0]) =>
       isCheckout ? r.checkoutRate : r.atcRate;
-    const avgRate = isCheckout ? avgCheckoutRate : avgAtcRate;
 
+    const sortedByRate = [...processed].sort((a, b) => getRateForMarker(b) - getRateForMarker(a));
+    const sortedByRev  = [...processed].sort((a, b) => b.revenue - a.revenue);
+    const topN = Math.max(1, Math.ceil(processed.length * 0.3));
+    const topRateNames    = new Set(sortedByRate.slice(0, topN).map(r => r.name));
+    const topRevNames     = new Set(sortedByRev.slice(0, topN).map(r => r.name));
+    const bottomRateNames = new Set(sortedByRate.slice(-topN).map(r => r.name));
+
+    // 🟢 top 30% taxa E top 30% receita | 🔴 top 30% receita E bottom 30% taxa
     const getMarker = (r: typeof processed[0]): string => {
-      const highRevenue = r.revenue  >= 1.5 * avgRevenue;
-      const highRate    = getRateForMarker(r) >= 1.5 * avgRate;
-      const lowRate     = getRateForMarker(r) <= 0.6 * avgRate;
-      if (highRate && highRevenue)  return '🟢 ';
-      if (highRevenue && lowRate)   return '🔴 ';
+      if (topRateNames.has(r.name) && topRevNames.has(r.name))    return '🟢 ';
+      if (topRevNames.has(r.name) && bottomRateNames.has(r.name)) return '🔴 ';
       return '';
     };
 
     // ── Cabeçalhos da tabela ─────────────────────────────────────────────────
     const rateHeader    = isCheckout ? 'Taxa Checkout' : 'Taxa ATC';
-    const headers       = ['#', 'Produto', 'Views', 'Taxa ATC', 'Compras', 'Taxa Checkout', 'Receita'];
-    const headersSimple = ['#', 'Produto', 'Views', rateHeader, 'Compras', 'Receita'];
+    const viewsHeader   = min_views ? `Views (>${min_views.toLocaleString('pt-BR')})` : 'Views';
+    const headers       = ['#', 'Produto', viewsHeader, 'Taxa ATC', 'Compras', 'Taxa Checkout', 'Receita'];
+    const headersSimple = ['#', 'Produto', viewsHeader, rateHeader, 'Compras', 'Receita'];
 
     // Para relatório de checkout, exibe as 3 taxas (ATC + Checkout); senão, exibe só a taxa relevante
     const toRow = (r: typeof processed[0], i: number): string[] => {
@@ -540,12 +540,8 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
       output += `\n🟢 ${isCheckout ? 'Checkout' : 'ATC'} + receita acima da média | 🔴 Receita alta com ${isCheckout ? 'checkout' : 'ATC'} baixo`;
     }
 
-    // ── Seção "Produtos Destaque a Considerar" ──────────────────────────────
-    if (hasHighlight) {
-      const minV = highlight_min_views ?? 0;
-      const minR = highlight_min_revenue ?? 0;
-
-      // Produtos que estão nos rankings principais
+    // ── Seção "Produtos Destaque a Considerar" (comparação relativa) ────────
+    {
       const displayedNames = new Set<string>();
       if (isBoth) {
         processed.slice(0, safeLimit).forEach(r => displayedNames.add(r.name));
@@ -554,15 +550,24 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
         processed.slice(0, safeLimit).forEach(r => displayedNames.add(r.name));
       }
 
-      const highlights = processed.filter(r =>
-        !displayedNames.has(r.name) && (r.views >= minV || r.revenue >= minR)
-      );
+      const displayed = processed.filter(r => displayedNames.has(r.name));
 
-      if (highlights.length > 0) {
-        const hlTable = compactTable(usedHeaders, highlights.map(toRow));
-        output +=
-          `\n\n⭐ **Produtos Destaque a Considerar** (views ≥${minV.toLocaleString('pt-BR')} ou receita ≥${formatBRL(minR)} — fora dos rankings principais)\n` +
-          hlTable;
+      if (displayed.length > 0 && processed.length > displayed.length) {
+        const minViews     = Math.min(...displayed.map(r => r.views));
+        const minPurchases = Math.min(...displayed.map(r => r.purchases));
+        const minRevenue   = Math.min(...displayed.map(r => r.revenue));
+
+        const highlights = processed.filter(r => {
+          if (displayedNames.has(r.name)) return false;
+          return r.views > minViews || r.purchases > minPurchases || r.revenue > minRevenue;
+        });
+
+        if (highlights.length > 0) {
+          const hlTable = compactTable(usedHeaders, highlights.map((r, i) => toRow(r, i)));
+          output +=
+            `\n\n⭐ **Produtos Destaque a Considerar** (fora do ranking principal, mas com volume acima do menor item exibido)\n` +
+            hlTable;
+        }
       }
     }
 

@@ -6,18 +6,48 @@ interface CreativeCellProps {
 
 function adUrl(row: CreativeRow): string | null {
   if (row.platform === 'meta' && row.adId) {
-    return `https://www.facebook.com/ads/library/?id=${row.adId}`;
+    // search_type=ad força busca pelo ID do anúncio, evitando redirect para busca por página
+    return `https://www.facebook.com/ads/library/?id=${row.adId}&search_type=ad&ad_type=all`;
   }
   return null;
+}
+
+function CopyIdButton({ adId }: { adId: string }) {
+  return (
+    <button
+      type="button"
+      onClick={e => { e.preventDefault(); navigator.clipboard.writeText(adId); }}
+      className="ml-1 text-[9px] text-zinc-300 hover:text-zinc-500 transition-colors px-0.5 rounded"
+      title="Copiar ID"
+    >
+      ⎘
+    </button>
+  );
 }
 
 export function CreativeCell({ row }: CreativeCellProps) {
   const url = adUrl(row);
 
-  const adIdLabel = (
-    <span className="block text-[10px] text-zinc-400 mt-0.5 font-mono truncate">
-      {row.platform === 'google' ? 'G' : 'M'}:{row.adId}
+  const adIdLine = (
+    <div className="flex items-center mt-0.5">
+      <span className="text-[10px] text-zinc-400 font-mono truncate">
+        {row.platform === 'google' ? 'G' : 'M'}:{row.adId}
+      </span>
+      {row.platform === 'google' && <CopyIdButton adId={row.adId} />}
+    </div>
+  );
+
+  const creativeTypeLine = row.creativeType ? (
+    <span className="block text-[10px] text-zinc-400 leading-tight mt-0.5">
+      {row.creativeType}
     </span>
+  ) : null;
+
+  const metaLine = (
+    <div className="min-w-0">
+      {adIdLine}
+      {creativeTypeLine}
+    </div>
   );
 
   const linkProps = url
@@ -25,7 +55,7 @@ export function CreativeCell({ row }: CreativeCellProps) {
     : {};
   const Wrap = url ? 'a' : 'div';
 
-  // Meta com thumbnail
+  // Com thumbnail (Meta imagem / PMax imagem)
   if (row.thumbnailUrl && row.thumbnailUrl !== '__video__') {
     return (
       <div className="flex items-start gap-2 min-w-0">
@@ -56,13 +86,13 @@ export function CreativeCell({ row }: CreativeCellProps) {
               {row.description}
             </span>
           )}
-          {adIdLabel}
+          {metaLine}
         </div>
       </div>
     );
   }
 
-  // Meta vídeo sem thumbnail
+  // Vídeo (Meta vídeo / PMax YouTube)
   if (row.thumbnailUrl === '__video__') {
     return (
       <div className="flex items-start gap-2 min-w-0">
@@ -75,14 +105,13 @@ export function CreativeCell({ row }: CreativeCellProps) {
               {row.headline}
             </span>
           )}
-          <span className="block text-[10px] text-zinc-400 mt-0.5">Vídeo</span>
-          {adIdLabel}
+          {metaLine}
         </div>
       </div>
     );
   }
 
-  // Google ou sem thumbnail — texto do ad
+  // Google texto / Shopping / sem preview visual
   if (row.adText || row.headline) {
     const lines = (row.adText ?? row.headline ?? '').split('\n');
     return (
@@ -95,18 +124,18 @@ export function CreativeCell({ row }: CreativeCellProps) {
             {lines[1]}
           </span>
         )}
-        {adIdLabel}
+        {metaLine}
       </div>
     );
   }
 
-  // Fallback
+  // Fallback (Shopping sem texto, etc.)
   return (
     <div className="min-w-0">
       <div className="w-16 h-16 rounded-md bg-zinc-100 border border-zinc-200 flex items-center justify-center mb-1">
         <span className="text-zinc-400 text-xs">Sem preview</span>
       </div>
-      {adIdLabel}
+      {metaLine}
     </div>
   );
 }

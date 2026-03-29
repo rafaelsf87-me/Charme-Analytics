@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { Brain, BarChart2 } from 'lucide-react';
 import { LogoutButton } from '@/components/logout-button';
 
 export default async function HomPage() {
@@ -40,7 +41,15 @@ export default async function HomPage() {
           {/* Card 1 — Central de Dados */}
           <Link href="/chat" className="group">
             <div className="flex flex-col h-full bg-white border border-charme-border rounded-xl p-8 shadow-sm transition-all hover:shadow-md hover:border-charme/30 cursor-pointer">
-              <div className="text-4xl mb-5">📊</div>
+              <div className="mb-5 flex items-center justify-between">
+                <Brain className="text-charme" size={36} strokeWidth={1.5} />
+                <div className="flex items-center gap-2">
+                  <Image src="/logo_analytics.png" alt="GA4" width={22} height={22} className="object-contain opacity-80" />
+                  <Image src="/logo_shopify.png" alt="Shopify" width={22} height={22} className="object-contain opacity-80" />
+                  <Image src="/images.png" alt="Meta" width={22} height={22} className="object-contain opacity-80" />
+                  <Image src="/logo_google.png" alt="Google Ads" width={22} height={22} className="object-contain opacity-80" />
+                </div>
+              </div>
               <h2 className="text-lg font-semibold text-charme-text mb-2">Central de Dados</h2>
               <p className="text-sm text-zinc-500 flex-1 leading-relaxed">
                 Perguntas e relatórios em linguagem natural cruzando Shopify, GA4, Google Ads e Meta Ads.
@@ -54,7 +63,13 @@ export default async function HomPage() {
           {/* Card 2 — Relatório de Criativos */}
           <Link href="/criativos" className="group">
             <div className="flex flex-col h-full bg-white border border-charme-border rounded-xl p-8 shadow-sm transition-all hover:shadow-md hover:border-charme/30 cursor-pointer">
-              <div className="text-4xl mb-5">🎯</div>
+              <div className="mb-5 flex items-center justify-between">
+                <BarChart2 className="text-charme" size={36} strokeWidth={1.5} />
+                <div className="flex items-center gap-2">
+                  <Image src="/logo_google.png" alt="Google Ads" width={22} height={22} className="object-contain opacity-80" />
+                  <Image src="/images.png" alt="Meta" width={22} height={22} className="object-contain opacity-80" />
+                </div>
+              </div>
               <h2 className="text-lg font-semibold text-charme-text mb-2">Relatório de Criativos</h2>
               <p className="text-sm text-zinc-500 flex-1 leading-relaxed">
                 Performance dos anúncios por criativo com thumbnails e métricas de Google Ads e Meta Ads.

@@ -44,6 +44,7 @@ export function CriativosView() {
           campaignId: f.campaignId,
           limit: f.limit,
           sortBy: f.sortBy,
+          adTypeFilter: f.adTypeFilter,
         }),
       });
 

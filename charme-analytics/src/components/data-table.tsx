@@ -15,9 +15,14 @@ function extractText(node: React.ReactNode): string {
 
 function isNumeric(node: React.ReactNode): boolean {
   const text = extractText(node).trim();
+  // Traço = ausência de dado em coluna numérica → tratar como numérico para manter alinhamento
+  if (text === '—' || text === '-' || text === 'N/A') return true;
   // Aceita: números, %, +/-, R$, espaços, vírgulas, pontos
   return /^[+\-]?(?:R\$\s?)?\d[\d.,]*\s*%?$/.test(text) || /^[+\-]\d[\d.,]*%?$/.test(text);
 }
+
+// Headers de colunas numéricas — para alinhar à direita igual às células de dados
+const NUMERIC_HEADER_RE = /^(#|\d|views|taxa|compras|receita|invest|impressõ|impresso|cliques?|ctr|cpa|roas|custo|valor|qtd|quantidade|pedidos?|média|media|δ|variação|variacao|conv)/i;
 
 export function DataTable({ children }: { children?: React.ReactNode }) {
   return (
@@ -48,7 +53,8 @@ export function DataTableRow({ children }: { children?: React.ReactNode }) {
 }
 
 export function DataTableHeaderCell({ children }: { children?: React.ReactNode }) {
-  const numeric = isNumeric(children);
+  const text = extractText(children).trim();
+  const numeric = isNumeric(children) || NUMERIC_HEADER_RE.test(text);
   return (
     <th
       className={`px-3 py-2 font-semibold whitespace-nowrap ${

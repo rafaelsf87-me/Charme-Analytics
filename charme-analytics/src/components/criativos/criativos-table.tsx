@@ -32,6 +32,25 @@ function fmtCPA(n: number) {
   return n > 0 ? fmtBRL(n) : '—';
 }
 
+// Formata data "2026-03-22" → "22/mar"
+function fmtDateShort(d: string): string {
+  const parts = d.split('-');
+  if (parts.length < 3) return d;
+  const months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const month = parseInt(parts[1]) - 1;
+  const day = parseInt(parts[2]);
+  return `${day}/${months[month] ?? parts[1]}`;
+}
+
+const PERIOD_LABELS: Record<string, string> = {
+  '7d':  'Últimos 7D',
+  '15d': 'Últimos 15D',
+  '30d': 'Últimos 30D',
+  '60d': 'Últimos 60D',
+  '90d': 'Últimos 90D',
+  '6m':  'Últimos 6M',
+};
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type SortDir = 'asc' | 'desc';
@@ -45,10 +64,11 @@ interface Col {
   sticky?: boolean;
 }
 
+// Fonte (2ª coluna) → Criativo → Campanha → métricas
 const COLS: Col[] = [
+  { key: 'platform',        label: 'Fonte',        fmt: r => r.platform },
   { key: 'adName',          label: 'Criativo',     fmt: () => '',        sticky: true },
   { key: 'campaignName',    label: 'Campanha',     fmt: r => r.campaignName },
-  { key: 'platform',        label: 'Fonte',        fmt: r => r.platform },
   { key: 'spend',           label: 'Spend',        fmt: r => fmtBRL(r.spend),        align: 'right' },
   { key: 'impressions',     label: 'Impressões',   fmt: r => fmtNum(r.impressions),  align: 'right' },
   { key: 'clicks',          label: 'Cliques',      fmt: r => fmtNum(r.clicks),       align: 'right' },
@@ -102,14 +122,20 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
     });
   }, [filtered, sortKey, sortDir]);
 
-  const canalLabel = filtros.channel === 'google' ? 'Google Ads' : filtros.channel === 'meta' ? 'Meta Ads' : 'Todos';
+  // Título: "Últimos 7D (22/mar — 28/mar) · Google Ads · 20 criativos"
+  const canalLabel = filtros.channel === 'google' ? 'Google Ads'
+    : filtros.channel === 'meta' ? 'Meta Ads' : 'Todos';
+
+  const periodDisplay = filtros.periodLabel
+    ? `${PERIOD_LABELS[filtros.periodLabel] ?? filtros.periodLabel} (${fmtDateShort(filtros.dateFrom)} — ${fmtDateShort(filtros.dateTo)})`
+    : `${fmtDateShort(filtros.dateFrom)} — ${fmtDateShort(filtros.dateTo)}`;
 
   return (
     <div className="flex flex-col gap-4">
       {/* Sumário + erros */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <p className="text-sm text-zinc-500">
-          {filtros.dateFrom} — {filtros.dateTo} · {canalLabel} · {rows.length} criativos
+          {periodDisplay} · {canalLabel} · {rows.length} criativos
         </p>
         {errors && errors.length > 0 && (
           <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -144,14 +170,15 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
               {COLS.map(col => {
                 const isNarrow = ['ctr','conversions','roas','cpa','viewConversions'].includes(col.key as string);
                 const isWide = col.key === 'campaignName';
+                const isSortable = !(['adName','platform'] as string[]).includes(col.key as string);
                 return (
                   <th
                     key={col.key}
-                    onClick={() => !['adName','platform'].includes(col.key as string) && handleSort(col.key)}
+                    onClick={() => isSortable && handleSort(col.key)}
                     className={[
                       'px-3 py-2.5 text-xs font-semibold text-white/80 whitespace-nowrap select-none',
                       col.align === 'right' ? 'text-right' : 'text-left',
-                      !['adName','platform'].includes(col.key as string) ? 'cursor-pointer hover:text-white' : '',
+                      isSortable ? 'cursor-pointer hover:text-white' : '',
                       isNarrow ? 'w-16' : '',
                       isWide ? 'min-w-[180px]' : '',
                     ].join(' ')}
@@ -181,6 +208,18 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
                   {/* # */}
                   <td className="px-3 py-3 text-xs text-zinc-400 align-top">{i + 1}</td>
 
+                  {/* Fonte — logo PNG, 2ª coluna */}
+                  <td className="px-3 py-3 align-top">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={row.platform === 'google' ? '/logo_google.png' : '/images.png'}
+                      alt={row.platform === 'google' ? 'Google' : 'Meta'}
+                      width={20}
+                      height={20}
+                      className="object-contain"
+                    />
+                  </td>
+
                   {/* Criativo */}
                   <td className="px-3 py-3 align-top min-w-[220px] max-w-[280px]">
                     <CreativeCell row={row} />
@@ -196,22 +235,10 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
                         {row.adGroupName}
                       </span>
                     )}
+                    <span className="block text-[10px] text-zinc-300 mt-0.5">{row.campaignType}</span>
                   </td>
 
-                  {/* Fonte */}
-                  <td className="px-3 py-3 align-top">
-                    {row.platform === 'google' ? (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-100 text-orange-700 whitespace-nowrap">
-                        Google
-                      </span>
-                    ) : (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 text-blue-700 whitespace-nowrap">
-                        Meta
-                      </span>
-                    )}
-                  </td>
-
-                  {/* Métricas numéricas */}
+                  {/* Métricas numéricas — COLS.slice(3) */}
                   {COLS.slice(3).map(col => (
                     <td key={col.key} className="px-3 py-3 align-top text-right text-xs text-zinc-700 whitespace-nowrap">
                       {col.fmt(row)}

@@ -23,6 +23,8 @@ export interface CreativeRow {
   roas: number;
   cpa: number;
   viewConversions: number | null;
+  adType: 'standard' | 'catalog' | 'pmax';
+  creativeType: string | null;
 }
 
 interface RequestBody {
@@ -33,6 +35,7 @@ interface RequestBody {
   campaignId?: string;
   limit: number;
   sortBy: string;
+  adTypeFilter?: 'all' | 'standard' | 'catalog' | 'pmax';
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -79,6 +82,7 @@ function mapMetaObjective(obj: string): string {
     OUTCOME_LEADS: 'Leads',
     OUTCOME_ENGAGEMENT: 'Engajamento',
     OUTCOME_APP_PROMOTION: 'App',
+    PRODUCT_CATALOG_SALES: 'Catálogo',
   };
   return map[obj] ?? obj;
 }
@@ -94,6 +98,43 @@ function mapGadsChannelType(type: string, subType?: string): string {
   return map[type] ?? type;
 }
 
+function mapGadsAdType(adType: string): string {
+  const map: Record<string, string> = {
+    RESPONSIVE_SEARCH_AD: 'Pesquisa Responsiva',
+    RESPONSIVE_DISPLAY_AD: 'Display Responsivo',
+    EXPANDED_TEXT_AD: 'Texto Expandido',
+    SHOPPING_PRODUCT_AD: 'Shopping',
+    VIDEO_RESPONSIVE_AD: 'Vídeo Responsivo',
+    DEMAND_GEN_MULTI_ASSET_AD: 'Demand Gen',
+    DEMAND_GEN_RESPONSIVE_AD: 'Demand Gen Responsivo',
+    CALL_AD: 'Chamada',
+    APP_AD: 'App',
+    SMART_CAMPAIGN_AD: 'Campanha Inteligente',
+    IMAGE_AD: 'Imagem',
+    HTML5_UPLOAD_AD: 'HTML5',
+    LEGACY_RESPONSIVE_DISPLAY_AD: 'Display (legado)',
+  };
+  return map[adType] ?? adType;
+}
+
+function mapPMaxFieldType(fieldType: string): string {
+  const map: Record<string, string> = {
+    MARKETING_IMAGE: 'Imagem horizontal',
+    SQUARE_MARKETING_IMAGE: 'Imagem quadrada',
+    PORTRAIT_MARKETING_IMAGE: 'Imagem vertical',
+    LOGO: 'Logo',
+    LANDSCAPE_LOGO: 'Logo horizontal',
+    YOUTUBE_VIDEO: 'Vídeo YouTube',
+    HEADLINE: 'Título',
+    LONG_HEADLINE: 'Título Longo',
+    DESCRIPTION: 'Descrição',
+    BUSINESS_NAME: 'Nome da Empresa',
+    CALL_TO_ACTION_SELECTION: 'CTA',
+    SITELINK: 'Sitelink',
+  };
+  return map[fieldType] ?? fieldType;
+}
+
 function sortRows(rows: CreativeRow[], sortBy: string): CreativeRow[] {
   const key = sortBy as keyof CreativeRow;
   return [...rows].sort((a, b) => {
@@ -103,7 +144,7 @@ function sortRows(rows: CreativeRow[], sortBy: string): CreativeRow[] {
   });
 }
 
-// ─── Google Ads ───────────────────────────────────────────────────────────────
+// ─── Google Ads (anúncios padrão + catálogo shopping) ─────────────────────────
 
 interface GadsAdRow {
   adGroupAd?: {
@@ -142,11 +183,11 @@ interface GadsAdRow {
 
 async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
   const token = await getGadsToken();
+  const adTypeFilter = body.adTypeFilter ?? 'all';
 
-  // Monta filtro de tipo de campanha
+  // Filtro de tipo de campanha (objetivo da campanha)
   const typeFilters: string[] = [];
   const types = body.campaignTypes.length > 0 ? body.campaignTypes : [];
-
   if (types.length > 0) {
     const channelTypes = types.filter(t => t !== 'DEMAND_GEN');
     if (channelTypes.length > 0) {
@@ -155,9 +196,16 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       );
     }
     if (types.includes('DEMAND_GEN')) {
-      // DEMAND_GEN pode ser channel_type ou sub_type dependendo da versão da API
       typeFilters.push(`campaign.advertising_channel_type = 'DEMAND_GEN'`);
     }
+  }
+
+  // Filtro de adType (Padrão / Catálogo) — PMax nunca vem aqui
+  let adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
+  if (adTypeFilter === 'standard') {
+    adTypeCondition = `AND campaign.advertising_channel_type NOT IN ('PERFORMANCE_MAX', 'SHOPPING')`;
+  } else if (adTypeFilter === 'catalog') {
+    adTypeCondition = `AND campaign.advertising_channel_type = 'SHOPPING'`;
   }
 
   const campaignFilter = body.campaignId
@@ -192,6 +240,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       AND ad_group_ad.status = 'ENABLED'
       AND campaign.status = 'ENABLED'
       AND metrics.cost_micros > 0
+      ${adTypeCondition}
       ${typeFilter}
       ${campaignFilter}
     ORDER BY metrics.cost_micros DESC
@@ -238,6 +287,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
     const m = row.metrics;
     const camp = row.campaign;
     const adGroupName = row.adGroup?.name ?? null;
+    const channelType = camp?.advertisingChannelType ?? '';
 
     const spend = parseInt(m?.costMicros ?? '0') / 1_000_000;
     const impressions = parseInt(m?.impressions ?? '0');
@@ -248,7 +298,6 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
     const cpa = conversions > 0 ? spend / conversions : 0;
     const ctr = impressions > 0 ? clicks / impressions : 0;
 
-    // Extrai texto do anúncio
     const rsa = ad?.responsiveSearchAd;
     const rda = ad?.responsiveDisplayAd;
     const headlines = (rsa?.headlines ?? rda?.headlines ?? [])
@@ -262,17 +311,18 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       .filter(Boolean)
       .join(' ');
 
+    const isShopping = channelType === 'SHOPPING';
+    const adTypeCategory: 'standard' | 'catalog' = isShopping ? 'catalog' : 'standard';
+    const creativeType = isShopping ? 'Shopping' : mapGadsAdType(ad?.type ?? '');
+
     return {
       platform: 'google',
       adId: ad?.id ?? '',
       adName: ad?.name ?? 'N/D',
       campaignName: camp?.name ?? 'N/D',
       adGroupName,
-      campaignType: mapGadsChannelType(
-        camp?.advertisingChannelType ?? '',
-        camp?.advertisingChannelSubType
-      ),
-      thumbnailUrl: null, // Google: sem thumbnail na v1
+      campaignType: mapGadsChannelType(channelType, camp?.advertisingChannelSubType),
+      thumbnailUrl: null,
       headline: headlines || null,
       description: descriptions || null,
       adText: headlines ? `${headlines}\n${descriptions}`.trim() : null,
@@ -285,6 +335,163 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       roas,
       cpa,
       viewConversions: parseInt(m?.viewThroughConversions ?? '0') || null,
+      adType: adTypeCategory,
+      creativeType: creativeType || null,
+    };
+  });
+}
+
+// ─── Google Ads PMax (asset_group_asset) ──────────────────────────────────────
+
+interface PMaxAssetRow {
+  assetGroupAsset?: {
+    fieldType?: string;
+    status?: string;
+  };
+  asset?: {
+    id?: string;
+    name?: string;
+    type?: string;
+    imageAsset?: { fullSize?: { url?: string } };
+    youtubeVideoAsset?: { youtubeVideoId?: string };
+    textAsset?: { text?: string };
+  };
+  assetGroup?: { name?: string };
+  campaign?: { id?: string; name?: string };
+  metrics?: {
+    costMicros?: string;
+    impressions?: string;
+    clicks?: string;
+    conversions?: string;
+    conversionsValue?: string;
+  };
+}
+
+async function fetchGooglePMaxAssets(body: RequestBody): Promise<CreativeRow[]> {
+  const token = await getGadsToken();
+
+  const campaignFilter = body.campaignId
+    ? `AND campaign.id = '${body.campaignId}'`
+    : '';
+
+  // Apenas assets visuais (imagens e vídeos) — texto não é criativo visual
+  const gaql = `
+    SELECT
+      asset_group_asset.field_type,
+      asset_group_asset.status,
+      asset.id,
+      asset.name,
+      asset.type,
+      asset.image_asset.full_size.url,
+      asset.youtube_video_asset.youtube_video_id,
+      asset.text_asset.text,
+      asset_group.name,
+      campaign.name,
+      campaign.id,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions,
+      metrics.conversions_value
+    FROM asset_group_asset
+    WHERE campaign.advertising_channel_type = 'PERFORMANCE_MAX'
+      AND segments.date BETWEEN '${body.dateFrom}' AND '${body.dateTo}'
+      AND asset_group_asset.status = 'ENABLED'
+      AND asset_group_asset.field_type IN (
+        'MARKETING_IMAGE', 'SQUARE_MARKETING_IMAGE', 'PORTRAIT_MARKETING_IMAGE',
+        'LOGO', 'LANDSCAPE_LOGO', 'YOUTUBE_VIDEO'
+      )
+      AND metrics.impressions > 0
+      ${campaignFilter}
+    ORDER BY metrics.clicks DESC
+    LIMIT ${body.limit}
+  `.trim();
+
+  const res = await fetch(GADS_ENDPOINT(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
+      'login-customer-id': (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? '').replace(/-/g, ''),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: gaql }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Google Ads PMax HTTP ${res.status}: ${err.slice(0, 200)}`);
+  }
+
+  const text = await res.text();
+  const rows: PMaxAssetRow[] = [];
+
+  try {
+    const parsed = JSON.parse(text);
+    const chunks = Array.isArray(parsed) ? parsed : [parsed];
+    for (const chunk of chunks) {
+      if (chunk.error) throw new Error(chunk.error.message);
+      if (chunk.results) rows.push(...chunk.results);
+    }
+  } catch {
+    for (const line of text.split('\n').filter(Boolean)) {
+      try {
+        const chunk = JSON.parse(line);
+        if (chunk.results) rows.push(...chunk.results);
+      } catch { /* ignora */ }
+    }
+  }
+
+  return rows.map((row): CreativeRow => {
+    const asset = row.asset;
+    const m = row.metrics;
+    const camp = row.campaign;
+    const fieldType = row.assetGroupAsset?.fieldType ?? '';
+
+    const spend = parseInt(m?.costMicros ?? '0') / 1_000_000;
+    const impressions = parseInt(m?.impressions ?? '0');
+    const clicks = parseInt(m?.clicks ?? '0');
+    const conversions = parseFloat(m?.conversions ?? '0');
+    const revenue = parseFloat(m?.conversionsValue ?? '0');
+    const roas = spend > 0 ? revenue / spend : 0;
+    const cpa = conversions > 0 ? spend / conversions : 0;
+    const ctr = impressions > 0 ? clicks / impressions : 0;
+
+    // Thumbnail: YouTube → miniatura do vídeo; imagem → URL direto
+    let thumbnailUrl: string | null = null;
+    const videoId = asset?.youtubeVideoAsset?.youtubeVideoId;
+    if (videoId) {
+      thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    } else if (asset?.imageAsset?.fullSize?.url) {
+      thumbnailUrl = asset.imageAsset.fullSize.url;
+    }
+
+    const isVideo = fieldType === 'YOUTUBE_VIDEO';
+    const assetName = asset?.name || asset?.textAsset?.text || 'Asset PMax';
+    const creativeType = mapPMaxFieldType(fieldType);
+
+    return {
+      platform: 'google',
+      adId: asset?.id ?? '',
+      adName: assetName,
+      campaignName: camp?.name ?? 'N/D',
+      adGroupName: row.assetGroup?.name ?? null,
+      campaignType: 'PMax',
+      thumbnailUrl: isVideo && !thumbnailUrl ? '__video__' : thumbnailUrl,
+      headline: assetName,
+      description: null,
+      adText: assetName,
+      spend,
+      impressions,
+      clicks,
+      ctr,
+      conversions,
+      revenue,
+      roas,
+      cpa,
+      viewConversions: null,
+      adType: 'pmax',
+      creativeType,
     };
   });
 }
@@ -314,6 +521,7 @@ interface MetaCreativeNode {
     video_id?: string;
   };
   campaign?: { objective?: string };
+  adset?: { promoted_object?: { product_set_id?: string } };
 }
 
 async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
@@ -322,20 +530,17 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
   const accountId = rawAccountId.startsWith('act_') ? rawAccountId : `act_${rawAccountId}`;
   const timeRange = JSON.stringify({ since: body.dateFrom, until: body.dateTo });
 
-  // Filtro de campanha específica
   const filteringBase: Array<{ field: string; operator: string; value: unknown }> = [];
   if (body.campaignId) {
     filteringBase.push({ field: 'campaign.id', operator: 'EQUAL', value: body.campaignId });
   }
 
-  // Campos mínimos: sem actions nem action_values (arrays pesados)
   const fields = [
     'ad_id', 'ad_name', 'campaign_name', 'adset_name',
     'impressions', 'clicks', 'spend', 'ctr',
     'purchase_roas',
   ].join(',');
 
-  // 1. Insights por ad
   const insightsUrl =
     `${GRAPH}/${accountId}/insights` +
     `?level=ad` +
@@ -344,7 +549,7 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
     `&action_attribution_windows=${encodeURIComponent('["7d_click","1d_view"]')}` +
     (filteringBase.length > 0 ? `&filtering=${encodeURIComponent(JSON.stringify(filteringBase))}` : '') +
     `&sort=spend_descending` +
-    `&limit=${Math.min(body.limit, 25)}`; // Meta: cap em 25 para evitar payload grande
+    `&limit=${Math.min(body.limit, 25)}`;
 
   const insightsRes = await fetch(insightsUrl, {
     headers: { Authorization: `Bearer ${token}` },
@@ -365,14 +570,17 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
   const insightRows = insightsJson.data ?? [];
   if (insightRows.length === 0) return [];
 
-  // 2. Batch fetch de creative info por ad_id
+  // Batch fetch: creative + campaign objective + adset.promoted_object (catálogo)
   const adIds = insightRows.map(r => r.ad_id).filter(Boolean) as string[];
   const creativeMap = new Map<string, MetaCreativeNode>();
 
   if (adIds.length > 0) {
+    const batchFields = encodeURIComponent(
+      'id,name,creative{thumbnail_url,image_url,title,body,video_id},campaign{objective},adset{promoted_object}'
+    );
     const batchUrl =
       `${GRAPH}?ids=${adIds.join(',')}` +
-      `&fields=${encodeURIComponent('id,name,creative{thumbnail_url,image_url,title,body,video_id},campaign{objective}')}` +
+      `&fields=${batchFields}` +
       `&access_token=${token}`;
 
     const creativeRes = await fetch(batchUrl);
@@ -384,20 +592,18 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
     }
   }
 
-  // 3. Filtro de tipo de campanha (Meta) — feito no frontend via objectives
+  // Filtro de tipo de campanha (objective)
   let rows = insightRows;
   if (body.campaignTypes.length > 0) {
-    // Filtra por objective se temos info da campanha (melhor esforço)
-    // Se não temos, mantém tudo
     rows = insightRows.filter(r => {
       const creative = creativeMap.get(r.ad_id ?? '');
       const objective = creative?.campaign?.objective;
-      if (!objective) return true; // sem info, mantém
+      if (!objective) return true;
       return body.campaignTypes.includes(objective);
     });
   }
 
-  return rows.map((row): CreativeRow => {
+  const mappedRows: CreativeRow[] = rows.map((row): CreativeRow => {
     const creative = creativeMap.get(row.ad_id ?? '');
     const c = creative?.creative;
 
@@ -405,17 +611,22 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
     const impressions = parseInt(row.impressions ?? '0');
     const clicks = parseInt(row.clicks ?? '0');
     const ctr = parseFloat(row.ctr ?? '0') / 100;
-    // purchase_roas retorna [{action_type: "omni_purchase", value: "2.5"}]
     const roasRaw = parseFloat(row.purchase_roas?.[0]?.value ?? '0');
     const roas = roasRaw > 0 ? roasRaw : 0;
     const revenue = spend * roas;
-    // Conversions não disponível sem o campo 'actions' (removido por payload)
     const conversions = 0;
     const cpa = 0;
 
     const thumbnailUrl = c?.thumbnail_url ?? c?.image_url ?? null;
     const isVideo = !!(c?.video_id);
-    const objective = creative?.campaign?.objective;
+    const objective = creative?.campaign?.objective ?? '';
+    const promotedObject = creative?.adset?.promoted_object;
+    const isCatalog = !!(promotedObject?.product_set_id || objective === 'PRODUCT_CATALOG_SALES');
+
+    const hasImage = !!(thumbnailUrl);
+    const creativeType = isCatalog
+      ? 'Catálogo'
+      : isVideo ? 'Vídeo' : hasImage ? 'Imagem' : 'Texto';
 
     return {
       platform: 'meta',
@@ -423,7 +634,7 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
       adName: row.ad_name ?? 'N/D',
       campaignName: row.campaign_name ?? 'N/D',
       adGroupName: row.adset_name ?? null,
-      campaignType: objective ? mapMetaObjective(objective) : 'N/D',
+      campaignType: mapMetaObjective(objective) || 'N/D',
       thumbnailUrl: isVideo && !thumbnailUrl ? '__video__' : thumbnailUrl,
       headline: c?.title ?? null,
       description: c?.body ?? null,
@@ -437,8 +648,16 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
       roas,
       cpa,
       viewConversions: null,
+      adType: isCatalog ? 'catalog' : 'standard',
+      creativeType,
     };
   });
+
+  // Aplicar filtro de adType
+  const adTypeFilter = body.adTypeFilter ?? 'all';
+  if (adTypeFilter === 'standard') return mappedRows.filter(r => r.adType === 'standard');
+  if (adTypeFilter === 'catalog') return mappedRows.filter(r => r.adType === 'catalog');
+  return mappedRows;
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
@@ -450,19 +669,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Parâmetros obrigatórios: channel, dateFrom, dateTo' }, { status: 400 });
   }
 
+  const adTypeFilter = body.adTypeFilter ?? 'all';
   const errors: string[] = [];
   let google: CreativeRow[] = [];
   let meta: CreativeRow[] = [];
 
+  // Google: padrão/catálogo via ad_group_ad, PMax via asset_group_asset
   if (body.channel === 'google' || body.channel === 'all') {
-    try {
-      google = await fetchGoogleCreatives(body);
-    } catch (err) {
-      errors.push(`Google Ads: ${(err as Error).message}`);
+    const fetchStandard = adTypeFilter !== 'pmax';
+    const fetchPMax = adTypeFilter === 'pmax' || adTypeFilter === 'all';
+
+    const results = await Promise.allSettled([
+      fetchStandard ? fetchGoogleCreatives(body) : Promise.resolve([]),
+      fetchPMax ? fetchGooglePMaxAssets(body) : Promise.resolve([]),
+    ]);
+
+    if (results[0].status === 'fulfilled') {
+      google = [...google, ...results[0].value];
+    } else {
+      errors.push(`Google Ads: ${(results[0].reason as Error).message}`);
+    }
+
+    if (results[1].status === 'fulfilled') {
+      google = [...google, ...results[1].value];
+    } else if (fetchPMax) {
+      errors.push(`Google Ads PMax: ${(results[1].reason as Error).message}`);
     }
   }
 
-  if (body.channel === 'meta' || body.channel === 'all') {
+  // Meta: sem PMax equivalente — pular se filtro for pmax
+  if ((body.channel === 'meta' || body.channel === 'all') && adTypeFilter !== 'pmax') {
     try {
       meta = await fetchMetaCreatives(body);
     } catch (err) {
@@ -470,7 +706,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // Combina e ordena
   const combined = sortRows([...google, ...meta], body.sortBy ?? 'spend');
 
   return NextResponse.json({
