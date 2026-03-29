@@ -9,8 +9,8 @@ export async function POST(request: Request) {
     return new Response('Payload inválido', { status: 400 });
   }
 
-  // Trunca para as últimas 10 mensagens (controle de tokens)
-  const messages: Message[] = (body.messages as Message[]).slice(-10);
+  // Trunca para as últimas 40 mensagens (controle de tokens — ~20 trocas)
+  const messages: Message[] = (body.messages as Message[]).slice(-40);
 
   // Converte para formato Anthropic
   const anthropicMessages: Anthropic.MessageParam[] = messages.map((m) => ({

@@ -50,7 +50,7 @@ export default async function HomPage() {
                   <Image src="/logo_google.png" alt="Google Ads" width={22} height={22} className="object-contain opacity-80" />
                 </div>
               </div>
-              <h2 className="text-lg font-semibold text-charme-text mb-2">Central de Dados</h2>
+              <h2 className="text-lg font-semibold text-charme-text mb-2">Dados e Insights</h2>
               <p className="text-sm text-zinc-500 flex-1 leading-relaxed">
                 Perguntas e relatórios em linguagem natural cruzando Shopify, GA4, Google Ads e Meta Ads.
               </p>
@@ -70,7 +70,7 @@ export default async function HomPage() {
                   <Image src="/images.png" alt="Meta" width={22} height={22} className="object-contain opacity-80" />
                 </div>
               </div>
-              <h2 className="text-lg font-semibold text-charme-text mb-2">Relatório de Criativos</h2>
+              <h2 className="text-lg font-semibold text-charme-text mb-2">Relatório ADS</h2>
               <p className="text-sm text-zinc-500 flex-1 leading-relaxed">
                 Performance dos anúncios por criativo com thumbnails e métricas de Google Ads e Meta Ads.
               </p>

@@ -134,7 +134,7 @@ export function CriativosView() {
           campaignId: f.campaignId,
           limit: f.limit,
           sortBy: 'spend',
-          adTypeFilter: f.adTypeFilter,
+          adTypeFilters: f.adTypeFilters,
         }),
       });
 

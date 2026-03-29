@@ -27,6 +27,8 @@ export interface CreativeRow {
   creativeType: string | null;
 }
 
+type AdTypeFilter = 'standard' | 'catalog' | 'pmax';
+
 interface RequestBody {
   channel: 'google' | 'meta' | 'all';
   dateFrom: string;
@@ -35,7 +37,7 @@ interface RequestBody {
   campaignId?: string;
   limit: number;
   sortBy: string;
-  adTypeFilter?: 'all' | 'standard' | 'catalog' | 'pmax';
+  adTypeFilters?: AdTypeFilter[]; // vazio = todos
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -184,7 +186,12 @@ interface GadsAdRow {
 
 async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
   const token = await getGadsToken();
-  const adTypeFilter = body.adTypeFilter ?? 'all';
+  const filters = body.adTypeFilters ?? [];
+  const wantStandard = filters.length === 0 || filters.includes('standard');
+  const wantCatalog  = filters.length === 0 || filters.includes('catalog');
+
+  // Se nenhum dos dois for necessário (só PMax selecionado), pular
+  if (!wantStandard && !wantCatalog) return [];
 
   // Filtro de tipo de campanha (objetivo da campanha)
   const typeFilters: string[] = [];
@@ -201,11 +208,16 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
     }
   }
 
-  // Filtro de adType (Padrão / Produto Direto) — PMax nunca vem aqui
-  let adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
-  if (adTypeFilter === 'standard') {
+  // Filtro de adType — PMax nunca vem aqui
+  let adTypeCondition: string;
+  if (wantStandard && wantCatalog) {
+    // Ambos: excluir só PMax
+    adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
+  } else if (wantStandard) {
+    // Só Padrão: excluir PMax, Shopping e Demand Gen Produto
     adTypeCondition = `AND campaign.advertising_channel_type NOT IN ('PERFORMANCE_MAX', 'SHOPPING') AND ad_group_ad.ad.type != 'DEMAND_GEN_PRODUCT_AD'`;
-  } else if (adTypeFilter === 'catalog') {
+  } else {
+    // Só Produto Direto: Shopping OU Demand Gen Produto (excl. PMax)
     adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX' AND (campaign.advertising_channel_type = 'SHOPPING' OR ad_group_ad.ad.type = 'DEMAND_GEN_PRODUCT_AD')`;
   }
 
@@ -707,10 +719,12 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
   });
 
   // Aplicar filtro de adType
-  const adTypeFilter = body.adTypeFilter ?? 'all';
-  if (adTypeFilter === 'standard') return mappedRows.filter(r => r.adType === 'standard');
-  if (adTypeFilter === 'catalog') return mappedRows.filter(r => r.adType === 'catalog');
-  return mappedRows;
+  const activeFilters = body.adTypeFilters ?? [];
+  if (activeFilters.length === 0) return mappedRows;
+  // Mapear: 'catalog' → adType 'catalog', 'standard' → adType 'standard', 'pmax' não existe no Meta
+  const wantedAdTypes = activeFilters.filter(f => f !== 'pmax');
+  if (wantedAdTypes.length === 0) return [];
+  return mappedRows.filter(r => wantedAdTypes.includes(r.adType as 'standard' | 'catalog'));
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
@@ -722,19 +736,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Parâmetros obrigatórios: channel, dateFrom, dateTo' }, { status: 400 });
   }
 
-  const adTypeFilter = body.adTypeFilter ?? 'all';
+  const activeFilters: AdTypeFilter[] = body.adTypeFilters ?? [];
+  const wantStandard = activeFilters.length === 0 || activeFilters.includes('standard');
+  const wantCatalog  = activeFilters.length === 0 || activeFilters.includes('catalog');
+  const wantPMax     = activeFilters.length === 0 || activeFilters.includes('pmax');
+
   const errors: string[] = [];
   let google: CreativeRow[] = [];
   let meta: CreativeRow[] = [];
 
   // Google: padrão/catálogo via ad_group_ad, PMax via asset_group_asset
   if (body.channel === 'google' || body.channel === 'all') {
-    const fetchStandard = adTypeFilter !== 'pmax';
-    const fetchPMax = adTypeFilter === 'pmax' || adTypeFilter === 'all';
-
     const results = await Promise.allSettled([
-      fetchStandard ? fetchGoogleCreatives(body) : Promise.resolve([]),
-      fetchPMax ? fetchGooglePMaxAssets(body) : Promise.resolve([]),
+      (wantStandard || wantCatalog) ? fetchGoogleCreatives(body) : Promise.resolve([]),
+      wantPMax ? fetchGooglePMaxAssets(body) : Promise.resolve([]),
     ]);
 
     if (results[0].status === 'fulfilled') {
@@ -745,13 +760,13 @@ export async function POST(request: Request) {
 
     if (results[1].status === 'fulfilled') {
       google = [...google, ...results[1].value];
-    } else if (fetchPMax) {
+    } else if (wantPMax) {
       errors.push(`Google Ads PMax: ${(results[1].reason as Error).message}`);
     }
   }
 
-  // Meta: sem PMax equivalente — pular se filtro for pmax
-  if ((body.channel === 'meta' || body.channel === 'all') && adTypeFilter !== 'pmax') {
+  // Meta: sem PMax equivalente — pular se só PMax selecionado
+  if ((body.channel === 'meta' || body.channel === 'all') && (wantStandard || wantCatalog)) {
     try {
       meta = await fetchMetaCreatives(body);
     } catch (err) {

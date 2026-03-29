@@ -89,7 +89,7 @@ function parseProgress(chunk: string): { events: ProgressEvent[]; text: string }
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
-const CONTEXT_LIMIT = 6; // nº de respostas do assistente antes de alertar
+const CONTEXT_LIMIT = 20; // nº de respostas do assistente antes de alertar
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);

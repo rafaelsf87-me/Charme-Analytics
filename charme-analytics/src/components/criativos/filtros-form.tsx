@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type Canal = 'google' | 'meta' | 'all';
-export type AdTypeFilter = 'all' | 'standard' | 'catalog' | 'pmax';
+export type AdTypeFilter = 'standard' | 'catalog' | 'pmax';
 
 export interface FiltrosState {
   channel: Canal;
@@ -17,7 +17,7 @@ export interface FiltrosState {
   campaignId?: string;
   campaignName?: string;
   limit: number;
-  adTypeFilter: AdTypeFilter;
+  adTypeFilters: AdTypeFilter[];
   periodLabel: string | null;
 }
 
@@ -49,10 +49,9 @@ const META_TYPES = [
 ];
 
 const AD_TYPE_OPTIONS: { value: AdTypeFilter; label: string; desc: string }[] = [
-  { value: 'all',      label: 'Todos',           desc: '' },
-  { value: 'standard', label: 'Padrão',          desc: 'Search, Display, Demand Gen (excl. Produto)' },
-  { value: 'catalog',  label: 'Produto Direto',  desc: 'Shopping / Demand Gen Produto (Google) · DPA (Meta)' },
-  { value: 'pmax',     label: 'PMax',            desc: 'Google Performance Max — assets visuais' },
+  { value: 'standard', label: 'Padrão',         desc: 'Search, Display, Demand Gen (excl. Produto)' },
+  { value: 'catalog',  label: 'Produto Direto', desc: 'Shopping / Demand Gen Produto (Google) · DPA (Meta)' },
+  { value: 'pmax',     label: 'PMax',           desc: 'Google Performance Max — assets visuais' },
 ];
 
 // ─── SVGs dos logos ───────────────────────────────────────────────────────────
@@ -108,7 +107,7 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
   const [campaignId, setCampaignId] = useState<string | undefined>();
   const [campaignName, setCampaignName] = useState<string | undefined>();
   const [limit, setLimit] = useState(20);
-  const [adTypeFilter, setAdTypeFilter] = useState<AdTypeFilter>('all');
+  const [adTypeFilters, setAdTypeFilters] = useState<AdTypeFilter[]>([]);
   const [periodLabel, setPeriodLabel] = useState<string | null>('7d');
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -193,10 +192,16 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
     setCampaignSearch('');
     setCampaignId(undefined);
     setCampaignName(undefined);
-    // Limpar PMax se mudar para Meta (Meta não tem PMax)
-    if (c === 'meta' && adTypeFilter === 'pmax') {
-      setAdTypeFilter('all');
+    // Remover PMax da seleção se mudar para Meta (Meta não tem PMax)
+    if (c === 'meta') {
+      setAdTypeFilters(prev => prev.filter(f => f !== 'pmax'));
     }
+  }
+
+  function toggleAdTypeFilter(value: AdTypeFilter) {
+    setAdTypeFilters(prev =>
+      prev.includes(value) ? prev.filter(f => f !== value) : [...prev, value]
+    );
   }
 
   function toggleCampaignType(value: string) {
@@ -212,13 +217,14 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
     onSubmit({
       channel, dateFrom, dateTo, campaignTypes,
       campaignId, campaignName, limit,
-      adTypeFilter, periodLabel,
+      adTypeFilters, periodLabel,
     });
   }
 
   const allTypes = channel === 'google' ? GOOGLE_TYPES : channel === 'meta' ? META_TYPES : [...GOOGLE_TYPES, ...META_TYPES];
   const isAllChecked = campaignTypes.length === 0;
   const showPMax = channel === 'google' || channel === 'all';
+  const allAdTypesChecked = adTypeFilters.length === 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
@@ -358,29 +364,34 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
       {/* Tipo de Anúncio */}
       <div>
         <label className="block text-sm font-medium text-zinc-700 mb-2">Tipo de Anúncio</label>
-        <div className="flex flex-wrap gap-2">
+        <div className="border border-zinc-200 rounded-lg bg-white divide-y divide-zinc-100">
+          {/* Todos */}
+          <label className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-zinc-50">
+            <input
+              type="checkbox"
+              checked={allAdTypesChecked}
+              onChange={() => setAdTypeFilters([])}
+              className="rounded border-zinc-300 accent-zinc-900"
+            />
+            <span className="text-sm text-zinc-700 font-medium">Todos</span>
+          </label>
           {AD_TYPE_OPTIONS
             .filter(opt => opt.value !== 'pmax' || showPMax)
             .map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setAdTypeFilter(opt.value)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
-                  adTypeFilter === opt.value
-                    ? 'bg-zinc-900 text-white border-zinc-900'
-                    : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300'
-                }`}
-              >
-                {opt.label}
-              </button>
+              <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-zinc-50">
+                <input
+                  type="checkbox"
+                  checked={adTypeFilters.includes(opt.value)}
+                  onChange={() => toggleAdTypeFilter(opt.value)}
+                  className="rounded border-zinc-300 accent-zinc-900"
+                />
+                <span className="text-sm text-zinc-600">
+                  {opt.label}
+                  {opt.desc && <span className="text-zinc-400 text-xs ml-1">— {opt.desc}</span>}
+                </span>
+              </label>
             ))}
         </div>
-        {adTypeFilter !== 'all' && (
-          <p className="mt-1.5 text-xs text-zinc-400">
-            {AD_TYPE_OPTIONS.find(o => o.value === adTypeFilter)?.desc}
-          </p>
-        )}
       </div>
 
       {/* Campanha específica */}

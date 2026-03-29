@@ -279,15 +279,13 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
     }
 
     const data: GA4ReportResponse = await res.json();
-    const rows = data.rows ?? [];
+    let rows = data.rows ?? [];
 
     if (rows.length === 0) {
       let suggestion = '';
       if (filters) {
         const rawTerm = filters.split(' ').pop() ?? '';
         const field = filters.split(' ')[0] ?? '';
-        // Para filtros de URL/pagePath: sanitizar (lowercase, sem acentos) resolve case-sensitivity
-        // Para itemName: usar ga4_get_item_report que tem OR automático com/sem acento
         if (field.toLowerCase().includes('pagepath') || field.toLowerCase().includes('url') || field.toLowerCase().includes('page')) {
           suggestion = ` ⚠️ Filtro de URL é case-sensitive no GA4. Tente "${rawTerm.toLowerCase()}" (lowercase sem acentos).`;
         } else {
@@ -295,6 +293,46 @@ export async function ga4_run_report(input: RunReportInput): Promise<string> {
         }
       }
       return `[GA4] Nenhum resultado para o período ${formatDate(date_from)} a ${formatDate(date_to)}.${suggestion}`;
+    }
+
+    // Normalizar pagePath: "/foo/" e "/foo" são a mesma página — somar métricas
+    // Só aplica quando pagePath é dimensão E todas as métricas são somáveis (não médias)
+    const NON_SUMMABLE_METRICS = new Set([
+      'averageSessionDuration', 'bounceRate', 'sessionConversionRate',
+      'engagementRate', 'averagePurchaseRevenue', 'cartToViewRate',
+      'purchaseToViewRate', 'userEngagementDuration',
+    ]);
+    const pagePathIdx = dimensions.indexOf('pagePath');
+    const allMetricsSummable = metrics.every(m => !NON_SUMMABLE_METRICS.has(m));
+
+    if (pagePathIdx !== -1 && allMetricsSummable) {
+      const merged = new Map<string, GA4ReportRow>();
+      for (const row of rows) {
+        const dims = row.dimensionValues.map(d => ({ ...d }));
+        const rawPath = dims[pagePathIdx]?.value ?? '';
+        // Normaliza: remove barra final exceto para a raiz "/"
+        const normalizedPath = rawPath.length > 1 && rawPath.endsWith('/')
+          ? rawPath.slice(0, -1)
+          : rawPath;
+        dims[pagePathIdx] = { value: normalizedPath };
+
+        // Chave: só o pagePath normalizado (ignora pageTitle para garantir merge mesmo com títulos diferentes)
+        const key = normalizedPath;
+        if (!merged.has(key)) {
+          merged.set(key, { dimensionValues: dims, metricValues: row.metricValues.map(m => ({ ...m })) });
+        } else {
+          const existing = merged.get(key)!;
+          existing.metricValues = existing.metricValues.map((m, i) => {
+            const a = parseFloat(m.value ?? '0');
+            const b = parseFloat(row.metricValues[i]?.value ?? '0');
+            return { value: String(Math.round((a + b) * 1000) / 1000) };
+          });
+        }
+      }
+      // Re-ordenar pela primeira métrica desc após merge e aplicar limit
+      rows = [...merged.values()]
+        .sort((a, b) => parseFloat(b.metricValues[0]?.value ?? '0') - parseFloat(a.metricValues[0]?.value ?? '0'))
+        .slice(0, safeLimit);
     }
 
     const dimHeaders = dimensions.map((d) => DIMENSION_LABELS[d] ?? d);
