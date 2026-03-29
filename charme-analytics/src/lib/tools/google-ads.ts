@@ -76,11 +76,11 @@ interface GAdsRow {
   metrics?: {
     impressions: string;
     clicks: string;
-    cost_micros: string;
+    costMicros: string;
     conversions: string;
-    conversions_value: string;
+    conversionsValue: string;
     ctr: string;
-    average_cpc: string;
+    averageCpc: string;
   };
 }
 
@@ -208,12 +208,12 @@ export async function google_ads_campaign_report(
       const nome = row.campaign?.name ?? 'N/D';
       const impressoes = parseInt(row.metrics?.impressions ?? '0').toLocaleString('pt-BR');
       const cliques = parseInt(row.metrics?.clicks ?? '0').toLocaleString('pt-BR');
-      const custoMicros = parseInt(row.metrics?.cost_micros ?? '0');
+      const custoMicros = parseInt(row.metrics?.costMicros ?? '0');
       const custo = custoMicros / 1_000_000;
-      const cpcMicros = parseInt(row.metrics?.average_cpc ?? '0');
+      const cpcMicros = parseInt(row.metrics?.averageCpc ?? '0');
       const cpc = cpcMicros / 1_000_000;
       const conversoes = parseFloat(row.metrics?.conversions ?? '0');
-      const receita = parseFloat(row.metrics?.conversions_value ?? '0');
+      const receita = parseFloat(row.metrics?.conversionsValue ?? '0');
       const ctr = parseFloat(row.metrics?.ctr ?? '0');
 
       // Métricas calculadas no backend
@@ -346,7 +346,7 @@ function formatGAdsValue(path: string, value: unknown): string {
   if (value === undefined || value === null) return 'N/D';
   const str = String(value);
 
-  if (path.includes('cost_micros') || path.includes('average_cpc')) {
+  if (path.includes('costMicros') || path.includes('averageCpc')) {
     return formatBRLFromMicros(parseInt(str) || 0);
   }
   if (path.includes('ctr') || path.includes('rate')) {
