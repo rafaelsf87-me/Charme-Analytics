@@ -48,11 +48,22 @@ const META_TYPES = [
   { value: 'OUTCOME_LEADS', label: 'Leads' },
 ];
 
-const AD_TYPE_OPTIONS: { value: AdTypeFilter; label: string; desc: string }[] = [
-  { value: 'standard', label: 'Padrão',         desc: 'Search, Display, Demand Gen (excl. Produto)' },
-  { value: 'catalog',  label: 'Produto Direto', desc: 'Shopping / Demand Gen Produto (Google) · DPA (Meta)' },
-  { value: 'pmax',     label: 'PMax',           desc: 'Google Performance Max — assets visuais' },
-];
+const AD_TYPE_OPTIONS: Record<Canal, { value: AdTypeFilter; label: string; desc: string }[]> = {
+  google: [
+    { value: 'standard', label: 'Padrão',         desc: 'Search, Display, Demand Gen (excl. Produto)' },
+    { value: 'catalog',  label: 'Produto Direto', desc: 'Shopping / Demand Gen Produto' },
+    { value: 'pmax',     label: 'PMax',           desc: 'Performance Max — assets visuais' },
+  ],
+  meta: [
+    { value: 'standard', label: 'Padrão',         desc: 'Imagem, Vídeo, Carrossel (excl. Catálogo)' },
+    { value: 'catalog',  label: 'Produto Direto', desc: 'DPA — Catálogo Dinâmico' },
+  ],
+  all: [
+    { value: 'standard', label: 'Padrão',         desc: 'Google: Search/Display/DG · Meta: Imagem/Vídeo/Carrossel' },
+    { value: 'catalog',  label: 'Produto Direto', desc: 'Google: Shopping/DG Produto · Meta: DPA Catálogo' },
+    { value: 'pmax',     label: 'PMax',           desc: 'Google Performance Max' },
+  ],
+};
 
 // ─── SVGs dos logos ───────────────────────────────────────────────────────────
 
@@ -223,8 +234,8 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
 
   const allTypes = channel === 'google' ? GOOGLE_TYPES : channel === 'meta' ? META_TYPES : [...GOOGLE_TYPES, ...META_TYPES];
   const isAllChecked = campaignTypes.length === 0;
-  const showPMax = channel === 'google' || channel === 'all';
   const allAdTypesChecked = adTypeFilters.length === 0;
+  const adTypeOptions = AD_TYPE_OPTIONS[channel];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
@@ -375,9 +386,7 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
             />
             <span className="text-sm text-zinc-700 font-medium">Todos</span>
           </label>
-          {AD_TYPE_OPTIONS
-            .filter(opt => opt.value !== 'pmax' || showPMax)
-            .map(opt => (
+          {adTypeOptions.map(opt => (
               <label key={opt.value} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-zinc-50">
                 <input
                   type="checkbox"
