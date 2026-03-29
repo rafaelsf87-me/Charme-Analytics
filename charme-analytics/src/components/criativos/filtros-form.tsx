@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type Canal = 'google' | 'meta' | 'all';
-export type SortBy = 'spend' | 'roas' | 'conversions' | 'impressions' | 'clicks' | 'ctr';
 export type AdTypeFilter = 'all' | 'standard' | 'catalog' | 'pmax';
 
 export interface FiltrosState {
@@ -18,7 +17,6 @@ export interface FiltrosState {
   campaignId?: string;
   campaignName?: string;
   limit: number;
-  sortBy: SortBy;
   adTypeFilter: AdTypeFilter;
   periodLabel: string | null;
 }
@@ -50,20 +48,11 @@ const META_TYPES = [
   { value: 'OUTCOME_LEADS', label: 'Leads' },
 ];
 
-const SORT_OPTIONS: { value: SortBy; label: string }[] = [
-  { value: 'spend', label: 'Spend' },
-  { value: 'roas', label: 'ROAS' },
-  { value: 'conversions', label: 'Conversões' },
-  { value: 'impressions', label: 'Impressões' },
-  { value: 'clicks', label: 'Cliques' },
-  { value: 'ctr', label: 'CTR' },
-];
-
 const AD_TYPE_OPTIONS: { value: AdTypeFilter; label: string; desc: string }[] = [
-  { value: 'all',      label: 'Todos',    desc: '' },
-  { value: 'standard', label: 'Padrão',   desc: 'Search, Display, Demand Gen' },
-  { value: 'catalog',  label: 'Catálogo', desc: 'Shopping (Google) / DPA (Meta)' },
-  { value: 'pmax',     label: 'PMax',     desc: 'Google Performance Max (assets visuais)' },
+  { value: 'all',      label: 'Todos',           desc: '' },
+  { value: 'standard', label: 'Padrão',          desc: 'Search, Display, Demand Gen (excl. Produto)' },
+  { value: 'catalog',  label: 'Produto Direto',  desc: 'Shopping / Demand Gen Produto (Google) · DPA (Meta)' },
+  { value: 'pmax',     label: 'PMax',            desc: 'Google Performance Max — assets visuais' },
 ];
 
 // ─── SVGs dos logos ───────────────────────────────────────────────────────────
@@ -119,7 +108,6 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
   const [campaignId, setCampaignId] = useState<string | undefined>();
   const [campaignName, setCampaignName] = useState<string | undefined>();
   const [limit, setLimit] = useState(20);
-  const [sortBy, setSortBy] = useState<SortBy>('spend');
   const [adTypeFilter, setAdTypeFilter] = useState<AdTypeFilter>('all');
   const [periodLabel, setPeriodLabel] = useState<string | null>('7d');
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
@@ -223,7 +211,7 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
     if (err) { setDateError(err); return; }
     onSubmit({
       channel, dateFrom, dateTo, campaignTypes,
-      campaignId, campaignName, limit, sortBy,
+      campaignId, campaignName, limit,
       adTypeFilter, periodLabel,
     });
   }
@@ -445,36 +433,21 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
         )}
       </div>
 
-      {/* Quantidade e Ordenação */}
-      <div className="flex flex-wrap gap-6">
-        <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-2">Quantidade de criativos</label>
-          <select
-            value={limit}
-            onChange={e => setLimit(Number(e.target.value))}
-            className="h-8 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-700 focus:outline-none focus:border-zinc-400"
-          >
-            {[10, 20, 30, 50].map(n => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-          {channel === 'all' && (
-            <p className="mt-1 text-xs text-zinc-400">Por canal (total até {limit * 2})</p>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-2">Ordenar por</label>
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value as SortBy)}
-            className="h-8 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-700 focus:outline-none focus:border-zinc-400"
-          >
-            {SORT_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
+      {/* Quantidade de criativos */}
+      <div>
+        <label className="block text-sm font-medium text-zinc-700 mb-2">Quantidade de criativos</label>
+        <select
+          value={limit}
+          onChange={e => setLimit(Number(e.target.value))}
+          className="h-8 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-700 focus:outline-none focus:border-zinc-400"
+        >
+          {[10, 20, 30, 50].map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        {channel === 'all' && (
+          <p className="mt-1 text-xs text-zinc-400">Por canal (total até {limit * 2})</p>
+        )}
       </div>
 
       {/* Submit */}

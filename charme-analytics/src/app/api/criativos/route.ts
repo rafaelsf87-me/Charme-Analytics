@@ -107,6 +107,7 @@ function mapGadsAdType(adType: string): string {
     VIDEO_RESPONSIVE_AD: 'Vídeo Responsivo',
     DEMAND_GEN_MULTI_ASSET_AD: 'Demand Gen',
     DEMAND_GEN_RESPONSIVE_AD: 'Demand Gen Responsivo',
+    DEMAND_GEN_PRODUCT_AD: 'Demand Gen Produto',
     CALL_AD: 'Chamada',
     APP_AD: 'App',
     SMART_CAMPAIGN_AD: 'Campanha Inteligente',
@@ -200,12 +201,12 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
     }
   }
 
-  // Filtro de adType (Padrão / Catálogo) — PMax nunca vem aqui
+  // Filtro de adType (Padrão / Produto Direto) — PMax nunca vem aqui
   let adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
   if (adTypeFilter === 'standard') {
-    adTypeCondition = `AND campaign.advertising_channel_type NOT IN ('PERFORMANCE_MAX', 'SHOPPING')`;
+    adTypeCondition = `AND campaign.advertising_channel_type NOT IN ('PERFORMANCE_MAX', 'SHOPPING') AND ad_group_ad.ad.type != 'DEMAND_GEN_PRODUCT_AD'`;
   } else if (adTypeFilter === 'catalog') {
-    adTypeCondition = `AND campaign.advertising_channel_type = 'SHOPPING'`;
+    adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX' AND (campaign.advertising_channel_type = 'SHOPPING' OR ad_group_ad.ad.type = 'DEMAND_GEN_PRODUCT_AD')`;
   }
 
   const campaignFilter = body.campaignId
@@ -311,9 +312,10 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       .filter(Boolean)
       .join(' ');
 
-    const isShopping = channelType === 'SHOPPING';
-    const adTypeCategory: 'standard' | 'catalog' = isShopping ? 'catalog' : 'standard';
-    const creativeType = isShopping ? 'Shopping' : mapGadsAdType(ad?.type ?? '');
+    const adTypeStr = ad?.type ?? '';
+    const isCatalog = channelType === 'SHOPPING' || adTypeStr === 'DEMAND_GEN_PRODUCT_AD';
+    const adTypeCategory: 'standard' | 'catalog' = isCatalog ? 'catalog' : 'standard';
+    const creativeType = channelType === 'SHOPPING' ? 'Shopping' : mapGadsAdType(adTypeStr);
 
     return {
       platform: 'google',
@@ -341,159 +343,210 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
   });
 }
 
-// ─── Google Ads PMax (asset_group_asset) ──────────────────────────────────────
-
-interface PMaxAssetRow {
-  assetGroupAsset?: {
-    fieldType?: string;
-    status?: string;
-  };
-  asset?: {
-    id?: string;
-    name?: string;
-    type?: string;
-    imageAsset?: { fullSize?: { url?: string } };
-    youtubeVideoAsset?: { youtubeVideoId?: string };
-    textAsset?: { text?: string };
-  };
-  assetGroup?: { name?: string };
-  campaign?: { id?: string; name?: string };
-  metrics?: {
-    costMicros?: string;
-    impressions?: string;
-    clicks?: string;
-    conversions?: string;
-    conversionsValue?: string;
-  };
-}
+// ─── Google Ads PMax (asset_group + asset_group_asset) ───────────────────────
 
 async function fetchGooglePMaxAssets(body: RequestBody): Promise<CreativeRow[]> {
   const token = await getGadsToken();
+  const reqHeaders = {
+    Authorization: `Bearer ${token}`,
+    'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
+    'login-customer-id': (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? '').replace(/-/g, ''),
+    'Content-Type': 'application/json',
+  };
 
   const campaignFilter = body.campaignId
     ? `AND campaign.id = '${body.campaignId}'`
     : '';
 
-  // Apenas assets visuais (imagens e vídeos) — texto não é criativo visual
-  const gaql = `
+  // asset_group_asset NÃO suporta metrics + segments.date — usar duas queries separadas:
+  // Query 1: métricas por asset_group (suporta date range e metrics)
+  const metricsGaql = `
     SELECT
-      asset_group_asset.field_type,
-      asset_group_asset.status,
-      asset.id,
-      asset.name,
-      asset.type,
-      asset.image_asset.full_size.url,
-      asset.youtube_video_asset.youtube_video_id,
-      asset.text_asset.text,
+      asset_group.id,
       asset_group.name,
-      campaign.name,
       campaign.id,
+      campaign.name,
+      campaign.shopping_setting.merchant_id,
       metrics.cost_micros,
       metrics.impressions,
       metrics.clicks,
       metrics.conversions,
       metrics.conversions_value
-    FROM asset_group_asset
+    FROM asset_group
     WHERE campaign.advertising_channel_type = 'PERFORMANCE_MAX'
       AND segments.date BETWEEN '${body.dateFrom}' AND '${body.dateTo}'
-      AND asset_group_asset.status = 'ENABLED'
-      AND asset_group_asset.field_type IN (
-        'MARKETING_IMAGE', 'SQUARE_MARKETING_IMAGE', 'PORTRAIT_MARKETING_IMAGE',
-        'LOGO', 'LANDSCAPE_LOGO', 'YOUTUBE_VIDEO'
-      )
-      AND metrics.impressions > 0
+      AND campaign.status = 'ENABLED'
+      AND metrics.cost_micros > 0
       ${campaignFilter}
-    ORDER BY metrics.clicks DESC
+    ORDER BY metrics.cost_micros DESC
     LIMIT ${body.limit}
   `.trim();
 
-  const res = await fetch(GADS_ENDPOINT(), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
-      'login-customer-id': (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? '').replace(/-/g, ''),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query: gaql }),
-  });
+  // Query 2: assets visuais por asset_group (sem date range, sem metrics)
+  const assetsGaql = `
+    SELECT
+      asset_group_asset.field_type,
+      asset.id,
+      asset.name,
+      asset.image_asset.full_size.url,
+      asset.youtube_video_asset.youtube_video_id,
+      asset_group.id,
+      asset_group.name,
+      campaign.id
+    FROM asset_group_asset
+    WHERE campaign.advertising_channel_type = 'PERFORMANCE_MAX'
+      AND campaign.status = 'ENABLED'
+      AND asset_group_asset.status = 'ENABLED'
+      AND asset_group_asset.field_type IN (
+        'MARKETING_IMAGE', 'SQUARE_MARKETING_IMAGE', 'PORTRAIT_MARKETING_IMAGE',
+        'YOUTUBE_VIDEO'
+      )
+      ${campaignFilter}
+    LIMIT 500
+  `.trim();
 
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`Google Ads PMax HTTP ${res.status}: ${err.slice(0, 200)}`);
+  async function gadsQuery(gaql: string, label: string): Promise<object[]> {
+    const res = await fetch(GADS_ENDPOINT(), {
+      method: 'POST',
+      headers: reqHeaders,
+      body: JSON.stringify({ query: gaql }),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => '');
+      throw new Error(`Google Ads PMax ${label} HTTP ${res.status}: ${err.slice(0, 200)}`);
+    }
+    const text = await res.text();
+    const rows: object[] = [];
+    try {
+      const parsed = JSON.parse(text);
+      const chunks = Array.isArray(parsed) ? parsed : [parsed];
+      for (const chunk of chunks) {
+        const c = chunk as { error?: { message: string }; results?: object[] };
+        if (c.error) throw new Error(c.error.message);
+        if (c.results) rows.push(...c.results);
+      }
+    } catch (e) {
+      const msg = (e as Error).message ?? '';
+      if (!msg.includes('JSON') && !msg.includes('token') && !msg.includes('Unexpected')) throw e;
+      for (const line of text.split('\n').filter(Boolean)) {
+        try {
+          const chunk = JSON.parse(line) as { results?: object[] };
+          if (chunk.results) rows.push(...chunk.results);
+        } catch { /* ignora */ }
+      }
+    }
+    return rows;
   }
 
-  const text = await res.text();
-  const rows: PMaxAssetRow[] = [];
+  const [rawMetrics, rawAssets] = await Promise.all([
+    gadsQuery(metricsGaql, 'métricas'),
+    gadsQuery(assetsGaql, 'assets'),
+  ]);
 
-  try {
-    const parsed = JSON.parse(text);
-    const chunks = Array.isArray(parsed) ? parsed : [parsed];
-    for (const chunk of chunks) {
-      if (chunk.error) throw new Error(chunk.error.message);
-      if (chunk.results) rows.push(...chunk.results);
-    }
-  } catch {
-    for (const line of text.split('\n').filter(Boolean)) {
-      try {
-        const chunk = JSON.parse(line);
-        if (chunk.results) rows.push(...chunk.results);
-      } catch { /* ignora */ }
-    }
+  if (rawMetrics.length === 0) return [];
+
+  type MetricRow = {
+    assetGroup?: { id?: string; name?: string };
+    campaign?: { id?: string; name?: string; shoppingSetting?: { merchantId?: string } };
+    metrics?: { costMicros?: string; impressions?: string; clicks?: string; conversions?: string; conversionsValue?: string };
+  };
+  type AssetRow = {
+    assetGroupAsset?: { fieldType?: string };
+    asset?: { id?: string; name?: string; imageAsset?: { fullSize?: { url?: string } }; youtubeVideoAsset?: { youtubeVideoId?: string } };
+    assetGroup?: { id?: string; name?: string };
+    campaign?: { id?: string };
+  };
+
+  const metrics = rawMetrics as MetricRow[];
+  const assets = rawAssets as AssetRow[];
+
+  // Mapa: asset_group.id → row de métricas
+  const metricsById = new Map<string, MetricRow>();
+  for (const r of metrics) {
+    const id = r.assetGroup?.id;
+    if (id) metricsById.set(id, r);
   }
 
-  return rows.map((row): CreativeRow => {
-    const asset = row.asset;
-    const m = row.metrics;
-    const camp = row.campaign;
-    const fieldType = row.assetGroupAsset?.fieldType ?? '';
+  // Top N asset groups por spend (já vêm ordenados pelo GAQL, mas garantimos)
+  const topGroupIds = new Set(
+    metrics
+      .sort((a, b) => parseInt(b.metrics?.costMicros ?? '0') - parseInt(a.metrics?.costMicros ?? '0'))
+      .slice(0, body.limit)
+      .map(r => r.assetGroup?.id)
+      .filter((id): id is string => !!id)
+  );
 
-    const spend = parseInt(m?.costMicros ?? '0') / 1_000_000;
-    const impressions = parseInt(m?.impressions ?? '0');
-    const clicks = parseInt(m?.clicks ?? '0');
-    const conversions = parseFloat(m?.conversions ?? '0');
-    const revenue = parseFloat(m?.conversionsValue ?? '0');
+  // Agrupar assets pelos top groups
+  const assetsByGroup = new Map<string, AssetRow[]>();
+  for (const row of assets) {
+    const agId = row.assetGroup?.id;
+    if (!agId || !topGroupIds.has(agId)) continue;
+    if (!assetsByGroup.has(agId)) assetsByGroup.set(agId, []);
+    assetsByGroup.get(agId)!.push(row);
+  }
+
+  const result: CreativeRow[] = [];
+
+  for (const [agId, agAssets] of assetsByGroup.entries()) {
+    const m = metricsById.get(agId);
+    if (!m) continue;
+
+    const spend = parseInt(m.metrics?.costMicros ?? '0') / 1_000_000;
+    const impressions = parseInt(m.metrics?.impressions ?? '0');
+    const clicks = parseInt(m.metrics?.clicks ?? '0');
+    const conversions = parseFloat(m.metrics?.conversions ?? '0');
+    const revenue = parseFloat(m.metrics?.conversionsValue ?? '0');
     const roas = spend > 0 ? revenue / spend : 0;
     const cpa = conversions > 0 ? spend / conversions : 0;
     const ctr = impressions > 0 ? clicks / impressions : 0;
 
-    // Thumbnail: YouTube → miniatura do vídeo; imagem → URL direto
-    let thumbnailUrl: string | null = null;
-    const videoId = asset?.youtubeVideoAsset?.youtubeVideoId;
-    if (videoId) {
-      thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-    } else if (asset?.imageAsset?.fullSize?.url) {
-      thumbnailUrl = asset.imageAsset.fullSize.url;
+    // Detecção de feed de produto: merchant_id presente → campanha usa Shopping feed
+    const hasFeed = !!(m.campaign?.shoppingSetting?.merchantId);
+
+    for (const row of agAssets) {
+      const asset = row.asset;
+      const fieldType = row.assetGroupAsset?.fieldType ?? '';
+
+      let thumbnailUrl: string | null = null;
+      const videoId = asset?.youtubeVideoAsset?.youtubeVideoId;
+      if (videoId) {
+        thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+      } else if (asset?.imageAsset?.fullSize?.url) {
+        thumbnailUrl = asset.imageAsset.fullSize.url;
+      }
+
+      const isVideo = fieldType === 'YOUTUBE_VIDEO';
+      const assetName = asset?.name || 'Asset PMax';
+      const baseType = mapPMaxFieldType(fieldType);
+      const creativeType = hasFeed ? `${baseType} · Feed` : baseType;
+
+      result.push({
+        platform: 'google',
+        adId: asset?.id ?? '',
+        adName: assetName,
+        campaignName: m.campaign?.name ?? 'N/D',
+        adGroupName: m.assetGroup?.name ?? null,
+        campaignType: 'PMax',
+        thumbnailUrl: isVideo && !thumbnailUrl ? '__video__' : thumbnailUrl,
+        headline: assetName,
+        description: null,
+        adText: assetName,
+        spend,
+        impressions,
+        clicks,
+        ctr,
+        conversions,
+        revenue,
+        roas,
+        cpa,
+        viewConversions: null,
+        adType: 'pmax',
+        creativeType,
+      });
     }
+  }
 
-    const isVideo = fieldType === 'YOUTUBE_VIDEO';
-    const assetName = asset?.name || asset?.textAsset?.text || 'Asset PMax';
-    const creativeType = mapPMaxFieldType(fieldType);
-
-    return {
-      platform: 'google',
-      adId: asset?.id ?? '',
-      adName: assetName,
-      campaignName: camp?.name ?? 'N/D',
-      adGroupName: row.assetGroup?.name ?? null,
-      campaignType: 'PMax',
-      thumbnailUrl: isVideo && !thumbnailUrl ? '__video__' : thumbnailUrl,
-      headline: assetName,
-      description: null,
-      adText: assetName,
-      spend,
-      impressions,
-      clicks,
-      ctr,
-      conversions,
-      revenue,
-      roas,
-      cpa,
-      viewConversions: null,
-      adType: 'pmax',
-      creativeType,
-    };
-  });
+  return result.sort((a, b) => b.spend - a.spend);
 }
 
 // ─── Meta Ads ─────────────────────────────────────────────────────────────────
