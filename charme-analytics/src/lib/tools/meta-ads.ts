@@ -159,7 +159,8 @@ export async function meta_ads_campaign_insights(
   if (validErr) return `ERRO [Meta Ads]: ${validErr}`;
 
   const safeLimit = Math.min(Math.max(1, limit), 100);
-  const adAccountId = process.env.META_AD_ACCOUNT_ID ?? '';
+  const rawAccountId = process.env.META_AD_ACCOUNT_ID ?? '';
+  const adAccountId = rawAccountId.startsWith('act_') ? rawAccountId : `act_${rawAccountId}`;
 
   const fields = [
     'campaign_name',
