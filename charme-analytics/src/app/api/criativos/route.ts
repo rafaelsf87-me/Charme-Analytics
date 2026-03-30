@@ -40,6 +40,12 @@ interface RequestBody {
   adTypeFilters?: AdTypeFilter[]; // vazio = todos
 }
 
+export interface QueryLog {
+  source: string;
+  query: string;
+  rowsReturned: number;
+}
+
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 let gadsOAuthClient: OAuth2Client | null = null;
@@ -184,14 +190,16 @@ interface GadsAdRow {
   };
 }
 
-async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
+async function fetchGoogleCreatives(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
   const token = await getGadsToken();
   const filters = body.adTypeFilters ?? [];
   const wantStandard = filters.length === 0 || filters.includes('standard');
   const wantCatalog  = filters.length === 0 || filters.includes('catalog');
 
   // Se nenhum dos dois for necessário (só PMax selecionado), pular
-  if (!wantStandard && !wantCatalog) return [];
+  if (!wantStandard && !wantCatalog) {
+    return { rows: [] as CreativeRow[], log: { source: 'Google Ads (anúncios)', query: 'skipped — só PMax selecionado', rowsReturned: 0 } };
+  }
 
   // Filtro de tipo de campanha (objetivo da campanha)
   const typeFilters: string[] = [];
@@ -208,18 +216,9 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
     }
   }
 
-  // Filtro de adType — PMax nunca vem aqui
-  let adTypeCondition: string;
-  if (wantStandard && wantCatalog) {
-    // Ambos: excluir só PMax
-    adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
-  } else if (wantStandard) {
-    // Só Padrão: excluir PMax, Shopping e Demand Gen Produto
-    adTypeCondition = `AND campaign.advertising_channel_type NOT IN ('PERFORMANCE_MAX', 'SHOPPING') AND ad_group_ad.ad.type != 'DEMAND_GEN_PRODUCT_AD'`;
-  } else {
-    // Só Produto Direto: Shopping OU Demand Gen Produto (excl. PMax)
-    adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX' AND (campaign.advertising_channel_type = 'SHOPPING' OR ad_group_ad.ad.type = 'DEMAND_GEN_PRODUCT_AD')`;
-  }
+  // Filtro de adType no GAQL — apenas nível de campanha para evitar INVALID_ARGUMENT
+  // Filtro de ad.type (catalog vs standard) feito client-side após retorno
+  const adTypeCondition = `AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'`;
 
   const campaignFilter = body.campaignId
     ? `AND campaign.id = '${body.campaignId}'`
@@ -257,7 +256,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       ${typeFilter}
       ${campaignFilter}
     ORDER BY metrics.cost_micros DESC
-    LIMIT ${body.limit}
+    LIMIT ${body.limit * 2}
   `.trim();
 
   const res = await fetch(GADS_ENDPOINT(), {
@@ -277,25 +276,25 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
   }
 
   const text = await res.text();
-  const rows: GadsAdRow[] = [];
+  const rawRows: GadsAdRow[] = [];
 
   try {
     const parsed = JSON.parse(text);
     const chunks = Array.isArray(parsed) ? parsed : [parsed];
     for (const chunk of chunks) {
       if (chunk.error) throw new Error(chunk.error.message);
-      if (chunk.results) rows.push(...chunk.results);
+      if (chunk.results) rawRows.push(...chunk.results);
     }
   } catch {
     for (const line of text.split('\n').filter(Boolean)) {
       try {
         const chunk = JSON.parse(line);
-        if (chunk.results) rows.push(...chunk.results);
+        if (chunk.results) rawRows.push(...chunk.results);
       } catch { /* ignora */ }
     }
   }
 
-  return rows.map((row): CreativeRow => {
+  const allMapped = rawRows.map((row): CreativeRow => {
     const ad = row.adGroupAd?.ad;
     const m = row.metrics;
     const camp = row.campaign;
@@ -353,11 +352,30 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<CreativeRow[]> {
       creativeType: creativeType || null,
     };
   });
+
+  // Filtro client-side por adType (evita INVALID_ARGUMENT no GAQL ao misturar ad.type + campaign filters)
+  const mapped = allMapped.filter(r => {
+    if (wantStandard && wantCatalog) return true;
+    if (wantCatalog) return r.adType === 'catalog';
+    if (wantStandard) return r.adType === 'standard';
+    return true;
+  });
+
+  const logDesc = [
+    `canal: ${body.channel}`,
+    `período: ${body.dateFrom} → ${body.dateTo}`,
+    `adTypeFilters: ${filters.length ? filters.join(', ') : 'todos'}`,
+    `campaignTypes: ${types.length ? types.join(', ') : 'todos'}`,
+    `limit GAQL: ${body.limit * 2} (margem para filtro client-side)`,
+    `retornados antes do filtro: ${allMapped.length} → após filtro adType: ${mapped.length}`,
+  ].join(' | ');
+
+  return { rows: mapped, log: { source: 'Google Ads (anúncios)', query: logDesc, rowsReturned: mapped.length } };
 }
 
 // ─── Google Ads PMax (asset_group + asset_group_asset) ───────────────────────
 
-async function fetchGooglePMaxAssets(body: RequestBody): Promise<CreativeRow[]> {
+async function fetchGooglePMaxAssets(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
   const token = await getGadsToken();
   const reqHeaders = {
     Authorization: `Bearer ${token}`,
@@ -455,7 +473,9 @@ async function fetchGooglePMaxAssets(body: RequestBody): Promise<CreativeRow[]> 
     gadsQuery(assetsGaql, 'assets'),
   ]);
 
-  if (rawMetrics.length === 0) return [];
+  if (rawMetrics.length === 0) {
+    return { rows: [] as CreativeRow[], log: { source: 'Google Ads PMax', query: 'nenhum asset group com gasto no período', rowsReturned: 0 } };
+  }
 
   type MetricRow = {
     assetGroup?: { id?: string; name?: string };
@@ -558,7 +578,15 @@ async function fetchGooglePMaxAssets(body: RequestBody): Promise<CreativeRow[]> 
     }
   }
 
-  return result.sort((a, b) => b.spend - a.spend);
+  const sorted = result.sort((a, b) => b.spend - a.spend);
+  const logDesc = [
+    `canal: ${body.channel}`,
+    `período: ${body.dateFrom} → ${body.dateTo}`,
+    `asset_groups retornados: ${rawMetrics.length}`,
+    `assets visuais mapeados: ${sorted.length}`,
+  ].join(' | ');
+
+  return { rows: sorted, log: { source: 'Google Ads PMax', query: logDesc, rowsReturned: sorted.length } };
 }
 
 // ─── Meta Ads ─────────────────────────────────────────────────────────────────
@@ -584,12 +612,14 @@ interface MetaCreativeNode {
     title?: string;
     body?: string;
     video_id?: string;
+    // object_story_spec.template_data presente → anúncio de catálogo dinâmico (DPA / Advantage+)
+    object_story_spec?: { template_data?: object };
   };
   campaign?: { objective?: string };
   adset?: { promoted_object?: { product_set_id?: string } };
 }
 
-async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
+async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
   const token = process.env.META_ACCESS_TOKEN ?? '';
   const rawAccountId = process.env.META_AD_ACCOUNT_ID ?? '';
   const accountId = rawAccountId.startsWith('act_') ? rawAccountId : `act_${rawAccountId}`;
@@ -633,7 +663,9 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
   if (insightsJson.error) throw new Error(insightsJson.error.message);
 
   const insightRows = insightsJson.data ?? [];
-  if (insightRows.length === 0) return [];
+  if (insightRows.length === 0) {
+    return { rows: [], log: { source: 'Meta Ads', query: `${insightsUrl.slice(0, 120)}...`, rowsReturned: 0 } };
+  }
 
   // Batch fetch: creative + campaign objective + adset.promoted_object (catálogo)
   const adIds = insightRows.map(r => r.ad_id).filter(Boolean) as string[];
@@ -641,7 +673,7 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
 
   if (adIds.length > 0) {
     const batchFields = encodeURIComponent(
-      'id,name,creative{thumbnail_url,image_url,title,body,video_id},campaign{objective},adset{promoted_object}'
+      'id,name,creative{thumbnail_url,image_url,title,body,video_id,object_story_spec{template_data}},campaign{objective},adset{promoted_object}'
     );
     const batchUrl =
       `${GRAPH}?ids=${adIds.join(',')}` +
@@ -686,7 +718,12 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
     const isVideo = !!(c?.video_id);
     const objective = creative?.campaign?.objective ?? '';
     const promotedObject = creative?.adset?.promoted_object;
-    const isCatalog = !!(promotedObject?.product_set_id || objective === 'PRODUCT_CATALOG_SALES');
+    // Catálogo: template_data (DPA/Advantage+) OU product_set_id no adset OU objetivo legado PRODUCT_CATALOG_SALES
+    const isCatalog = !!(
+      c?.object_story_spec?.template_data ||
+      promotedObject?.product_set_id ||
+      objective === 'PRODUCT_CATALOG_SALES'
+    );
 
     const hasImage = !!(thumbnailUrl);
     const creativeType = isCatalog
@@ -720,11 +757,20 @@ async function fetchMetaCreatives(body: RequestBody): Promise<CreativeRow[]> {
 
   // Aplicar filtro de adType
   const activeFilters = body.adTypeFilters ?? [];
-  if (activeFilters.length === 0) return mappedRows;
-  // Mapear: 'catalog' → adType 'catalog', 'standard' → adType 'standard', 'pmax' não existe no Meta
   const wantedAdTypes = activeFilters.filter(f => f !== 'pmax');
-  if (wantedAdTypes.length === 0) return [];
-  return mappedRows.filter(r => wantedAdTypes.includes(r.adType as 'standard' | 'catalog'));
+  const finalRows = wantedAdTypes.length === 0
+    ? mappedRows
+    : mappedRows.filter(r => wantedAdTypes.includes(r.adType as 'standard' | 'catalog'));
+
+  const logDesc = [
+    `account: ${accountId}`,
+    `período: ${body.dateFrom} → ${body.dateTo}`,
+    `adTypeFilters: ${activeFilters.length ? activeFilters.join(', ') : 'todos'}`,
+    `insights retornados: ${insightRows.length} → após filtro adType: ${finalRows.length}`,
+    `URL base: ${insightsUrl.slice(0, 100)}...`,
+  ].join(' | ');
+
+  return { rows: finalRows, log: { source: 'Meta Ads', query: logDesc, rowsReturned: finalRows.length } };
 }
 
 // ─── Route Handler ────────────────────────────────────────────────────────────
@@ -742,24 +788,30 @@ export async function POST(request: Request) {
   const wantPMax     = activeFilters.length === 0 || activeFilters.includes('pmax');
 
   const errors: string[] = [];
+  const queryLogs: QueryLog[] = [];
   let google: CreativeRow[] = [];
   let meta: CreativeRow[] = [];
 
   // Google: padrão/catálogo via ad_group_ad, PMax via asset_group_asset
   if (body.channel === 'google' || body.channel === 'all') {
+    const emptyResult = { rows: [] as CreativeRow[], log: { source: '', query: 'skipped', rowsReturned: 0 } };
     const results = await Promise.allSettled([
-      (wantStandard || wantCatalog) ? fetchGoogleCreatives(body) : Promise.resolve([]),
-      wantPMax ? fetchGooglePMaxAssets(body) : Promise.resolve([]),
+      (wantStandard || wantCatalog) ? fetchGoogleCreatives(body) : Promise.resolve(emptyResult),
+      wantPMax ? fetchGooglePMaxAssets(body) : Promise.resolve(emptyResult),
     ]);
 
     if (results[0].status === 'fulfilled') {
-      google = [...google, ...results[0].value];
+      const { rows, log } = results[0].value;
+      google = [...google, ...rows];
+      if (log.source) queryLogs.push(log);
     } else {
       errors.push(`Google Ads: ${(results[0].reason as Error).message}`);
     }
 
     if (results[1].status === 'fulfilled') {
-      google = [...google, ...results[1].value];
+      const { rows, log } = results[1].value;
+      google = [...google, ...rows];
+      if (log.source) queryLogs.push(log);
     } else if (wantPMax) {
       errors.push(`Google Ads PMax: ${(results[1].reason as Error).message}`);
     }
@@ -768,18 +820,31 @@ export async function POST(request: Request) {
   // Meta: sem PMax equivalente — pular se só PMax selecionado
   if ((body.channel === 'meta' || body.channel === 'all') && (wantStandard || wantCatalog)) {
     try {
-      meta = await fetchMetaCreatives(body);
+      const { rows, log } = await fetchMetaCreatives(body);
+      meta = rows;
+      queryLogs.push(log);
     } catch (err) {
       errors.push(`Meta Ads: ${(err as Error).message}`);
     }
   }
 
-  const combined = sortRows([...google, ...meta], body.sortBy ?? 'spend');
+  // Aplicar limit ao resultado final — evita retornar 90 quando configurado 20
+  const limit = body.limit ?? 20;
+  const googleFinal = sortRows(google, body.sortBy).slice(0, limit);
+  const metaFinal   = sortRows(meta,   body.sortBy).slice(0, limit);
+  const combined    = sortRows([...google, ...meta], body.sortBy ?? 'spend').slice(0, limit);
+
+  queryLogs.push({
+    source: 'Resumo',
+    query: `limit configurado: ${limit} | google bruto: ${google.length} → final: ${googleFinal.length} | meta bruto: ${meta.length} → final: ${metaFinal.length} | combined: ${combined.length}`,
+    rowsReturned: combined.length,
+  });
 
   return NextResponse.json({
-    google: body.channel !== 'meta' ? sortRows(google, body.sortBy) : undefined,
-    meta: body.channel !== 'google' ? sortRows(meta, body.sortBy) : undefined,
+    google: body.channel !== 'meta' ? googleFinal : undefined,
+    meta: body.channel !== 'google' ? metaFinal : undefined,
     combined,
     errors: errors.length > 0 ? errors : undefined,
+    queryLogs,
   });
 }

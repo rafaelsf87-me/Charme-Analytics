@@ -5,13 +5,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { FiltrosForm, type FiltrosState } from './filtros-form';
 import { CriativosTable } from './criativos-table';
-import type { CreativeRow } from '@/app/api/criativos/route';
+import type { CreativeRow, QueryLog } from '@/app/api/criativos/route';
 
 type Mode = 'filters' | 'results';
 
 interface ApiResponse {
   combined?: CreativeRow[];
   errors?: string[];
+  queryLogs?: QueryLog[];
 }
 
 // ─── Seletor de período inline ────────────────────────────────────────────────
@@ -110,7 +111,9 @@ export function CriativosView() {
   const [loadingMsg, setLoadingMsg] = useState('');
   const [rows, setRows] = useState<CreativeRow[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [queryLogs, setQueryLogs] = useState<QueryLog[]>([]);
   const [filtros, setFiltros] = useState<FiltrosState | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
 
   async function handleSubmit(f: FiltrosState) {
     setFiltros(f);
@@ -146,6 +149,8 @@ export function CriativosView() {
         const data: ApiResponse = await res.json();
         setRows(data.combined ?? []);
         setErrors(data.errors ?? []);
+        setQueryLogs(data.queryLogs ?? []);
+        setShowLogs(false);
       }
 
       setMode('results');
@@ -222,6 +227,29 @@ export function CriativosView() {
               />
             </div>
             <CriativosTable rows={rows} filtros={filtros} errors={errors.length > 0 ? errors : undefined} />
+
+            {/* Detalhes de consultas */}
+            {queryLogs.length > 0 && (
+              <div className="mt-2">
+                <button
+                  onClick={() => setShowLogs(v => !v)}
+                  className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors flex items-center gap-1"
+                >
+                  <span>{showLogs ? '▲' : '▼'}</span>
+                  Detalhes das consultas
+                </button>
+                {showLogs && (
+                  <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50 divide-y divide-zinc-100">
+                    {queryLogs.map((log, i) => (
+                      <div key={i} className="px-4 py-2.5">
+                        <p className="text-xs font-semibold text-zinc-600">{log.source}</p>
+                        <p className="text-[11px] text-zinc-400 mt-0.5 break-all leading-relaxed">{log.query}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </main>

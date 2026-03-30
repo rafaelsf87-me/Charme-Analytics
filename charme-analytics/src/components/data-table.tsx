@@ -27,7 +27,7 @@ const NUMERIC_HEADER_RE = /^(#|\d|views|taxa|compras|receita|invest|impressõ|im
 export function DataTable({ children }: { children?: React.ReactNode }) {
   return (
     <div className="my-3 w-full overflow-x-auto rounded-md border border-zinc-200">
-      <table className="w-full text-sm">{children}</table>
+      <table className="w-auto min-w-[50%] max-w-full text-sm">{children}</table>
     </div>
   );
 }

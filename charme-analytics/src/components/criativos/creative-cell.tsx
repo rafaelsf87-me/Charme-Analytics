@@ -6,8 +6,7 @@ interface CreativeCellProps {
 
 function adUrl(row: CreativeRow): string | null {
   if (row.platform === 'meta' && row.adId) {
-    // search_type=ad força busca pelo ID do anúncio, evitando redirect para busca por página
-    return `https://www.facebook.com/ads/library/?id=${row.adId}&search_type=ad&ad_type=all`;
+    return `https://www.facebook.com/ads/library/?id=${row.adId}`;
   }
   return null;
 }

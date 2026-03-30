@@ -50,18 +50,18 @@ const META_TYPES = [
 
 const AD_TYPE_OPTIONS: Record<Canal, { value: AdTypeFilter; label: string; desc: string }[]> = {
   google: [
-    { value: 'standard', label: 'Padrão',         desc: 'Search, Display, Demand Gen (excl. Produto)' },
-    { value: 'catalog',  label: 'Produto Direto', desc: 'Shopping / Demand Gen Produto' },
-    { value: 'pmax',     label: 'PMax',           desc: 'Performance Max — assets visuais' },
+    { value: 'standard', label: 'Padrão',              desc: 'Search, Display, Demand Gen (excl. Catálogo)' },
+    { value: 'catalog',  label: 'Catálogo de Produtos', desc: 'Shopping / Demand Gen Produto' },
+    { value: 'pmax',     label: 'PMax',                desc: 'Performance Max — assets visuais' },
   ],
   meta: [
-    { value: 'standard', label: 'Padrão',         desc: 'Imagem, Vídeo, Carrossel (excl. Catálogo)' },
-    { value: 'catalog',  label: 'Produto Direto', desc: 'DPA — Catálogo Dinâmico' },
+    { value: 'standard', label: 'Padrão',              desc: 'Imagem, Vídeo, Carrossel (excl. Catálogo)' },
+    { value: 'catalog',  label: 'Catálogo de Produtos', desc: 'DPA — Catálogo Dinâmico' },
   ],
   all: [
-    { value: 'standard', label: 'Padrão',         desc: 'Google: Search/Display/DG · Meta: Imagem/Vídeo/Carrossel' },
-    { value: 'catalog',  label: 'Produto Direto', desc: 'Google: Shopping/DG Produto · Meta: DPA Catálogo' },
-    { value: 'pmax',     label: 'PMax',           desc: 'Google Performance Max' },
+    { value: 'standard', label: 'Padrão',              desc: 'Google: Search/Display/DG · Meta: Imagem/Vídeo/Carrossel' },
+    { value: 'catalog',  label: 'Catálogo de Produtos', desc: 'Google: Shopping/DG Produto · Meta: DPA Catálogo' },
+    { value: 'pmax',     label: 'PMax',                desc: 'Google Performance Max' },
   ],
 };
 
