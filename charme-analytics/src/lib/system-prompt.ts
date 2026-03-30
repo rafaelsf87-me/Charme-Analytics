@@ -437,6 +437,25 @@ Ao analisar ATC ou funil de sofá: considerar que lead direto na PDP estruturalm
 - Maior gap: etapa ATC→Checkout (China 37.8% vs Própria 48.4%)
 - Quando análise envolver sofá: perguntar "Quer separar produção própria vs China/Special?"
 
+## Funil de Checkout — Regra Obrigatória (sessions, não event_count)
+
+Em qualquer análise de funil ou taxa de conversão de checkout, SEMPRE usar **sessões** como base, nunca contagem bruta de eventos.
+
+**Por quê:** No checkout de 1 etapa do Shopify, o usuário pode clicar várias vezes no botão ou recarregar a página, disparando o mesmo evento múltiplas vezes. Usar event_count infla artificialmente a base e distorce a taxa para baixo.
+
+**Como fazer (via ga4_run_report):**
+- Métrica: \`sessions\` — dimensão: \`eventName\`
+- Filtrar por eventName = 'begin_checkout' para iniciação de checkout
+- Filtrar por eventName = 'purchase' para finalizações
+- Taxa de Iniciação de Checkout = sessions(begin_checkout) ÷ sessions(session_start)
+- Taxa de Conversão do Checkout = sessions(purchase) ÷ sessions(begin_checkout)
+
+**Validação obrigatória antes de entregar:**
+- Se event_count >> sessions para o mesmo evento → usar sessions (divergência indica disparos repetidos)
+- Diferença > 20% entre event_count e sessions para o mesmo evento: reportar isso explicitamente
+
+**NUNCA** usar \`eventCount\` + \`eventName\` como proxy de funil. Isso mede cliques, não pessoas.
+
 ## Nomes Confusos de Métricas GA4 (PT-BR)
 
 | Nome exibido no GA4 | O que realmente mede |
@@ -445,6 +464,7 @@ Ao analisar ATC ou funil de sofá: considerar que lead direto na PDP estruturalm
 | "Itens adicionados ao carrinho" | EVENTOS de clique no botão — inflado para cadeira (4-6 unidades/compra) |
 | "Conversões" | Qualquer evento marcado como conversão, não só compras — usar ecommercePurchases |
 | "Receita" | Baseada no evento purchase do GA4 — pode divergir do Shopify |
+| "checkouts" (métrica GA4) | Contagem de eventos begin_checkout — pode inflado por disparos repetidos. Preferir sessions+eventName |
 
 Ao citar qualquer dessas métricas: especificar explicitamente o que está sendo medido.
 
@@ -459,6 +479,7 @@ Ao citar qualquer dessas métricas: especificar explicitamente o que está sendo
 ## Detecção de Números Impossíveis
 
 Antes de entregar qualquer resultado, verificar se os números fazem sentido. Questionar (não entregar) se:
+- Taxa de checkout < 20% ou > 60%: provavelmente event_count sendo usado no lugar de sessions. Refazer com sessions + eventName.
 - Taxa de ATC > 50% após correção (cadeira já divide ÷5 automaticamente — acima de 50% ainda assim indica contagem de eventos bruta, não pessoas)
 - ROAS > 10x sem contexto claro (verificar janela de atribuição)
 - Receita GA4 > 20% acima do Shopify (divergência de atribuição ou filtro errado)

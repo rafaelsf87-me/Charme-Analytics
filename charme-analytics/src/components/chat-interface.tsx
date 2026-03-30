@@ -89,8 +89,8 @@ function parseProgress(chunk: string): { events: ProgressEvent[]; text: string }
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
-// Janela da API = 40 msgs (~20 trocas). Alertar quando faltam 8 trocas = na 12ª resposta.
-const CONTEXT_LIMIT = 12;
+// Janela da API = 40 msgs (~20 trocas). Alertar a partir da 7ª resposta — ponto real de alucinação.
+const CONTEXT_LIMIT = 7;
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
