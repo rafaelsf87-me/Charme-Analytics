@@ -23,11 +23,11 @@ export interface CreativeRow {
   roas: number;
   cpa: number;
   viewConversions: number | null;
-  adType: 'standard' | 'catalog' | 'pmax';
+  adType: 'standard' | 'catalog' | 'pmax' | 'catalog_products';
   creativeType: string | null;
 }
 
-type AdTypeFilter = 'standard' | 'catalog' | 'pmax';
+type AdTypeFilter = 'standard' | 'catalog' | 'pmax' | 'catalog_products';
 
 interface RequestBody {
   channel: 'google' | 'meta' | 'all';
@@ -612,11 +612,18 @@ interface MetaCreativeNode {
     title?: string;
     body?: string;
     video_id?: string;
-    // object_story_spec.template_data presente → anúncio de catálogo dinâmico (DPA / Advantage+)
+    // object_story_spec.template_data → DPA legado
     object_story_spec?: { template_data?: object };
+    // asset_feed_spec presente → Advantage+ Catalog Sales (API v19+)
+    asset_feed_spec?: object;
   };
   campaign?: { objective?: string };
-  adset?: { promoted_object?: { product_set_id?: string } };
+  adset?: {
+    promoted_object?: {
+      product_set_id?: string;      // DPA legado
+      product_catalog_id?: string;  // Advantage+ Catalog Sales
+    };
+  };
 }
 
 async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
@@ -673,7 +680,7 @@ async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRo
 
   if (adIds.length > 0) {
     const batchFields = encodeURIComponent(
-      'id,name,creative{thumbnail_url,image_url,title,body,video_id,object_story_spec{template_data}},campaign{objective},adset{promoted_object}'
+      'id,name,creative{thumbnail_url,image_url,title,body,video_id,object_story_spec{template_data},asset_feed_spec},campaign{objective},adset{promoted_object{product_set_id,product_catalog_id}}'
     );
     const batchUrl =
       `${GRAPH}?ids=${adIds.join(',')}` +
@@ -718,10 +725,13 @@ async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRo
     const isVideo = !!(c?.video_id);
     const objective = creative?.campaign?.objective ?? '';
     const promotedObject = creative?.adset?.promoted_object;
-    // Catálogo: template_data (DPA/Advantage+) OU product_set_id no adset OU objetivo legado PRODUCT_CATALOG_SALES
+    // Catálogo: DPA legado (template_data / product_set_id / PRODUCT_CATALOG_SALES)
+    //           OU Advantage+ Catalog Sales (asset_feed_spec / product_catalog_id / OUTCOME_SALES com catalog id)
     const isCatalog = !!(
       c?.object_story_spec?.template_data ||
+      c?.asset_feed_spec ||
       promotedObject?.product_set_id ||
+      promotedObject?.product_catalog_id ||
       objective === 'PRODUCT_CATALOG_SALES'
     );
 
@@ -756,8 +766,10 @@ async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRo
   });
 
   // Aplicar filtro de adType
+  // Nota: 'pmax' e 'catalog_products' são excluídos — esta função só produz 'standard' | 'catalog'.
+  // 'catalog_products' é tratado exclusivamente por fetchMetaCatalogProducts().
   const activeFilters = body.adTypeFilters ?? [];
-  const wantedAdTypes = activeFilters.filter(f => f !== 'pmax');
+  const wantedAdTypes = activeFilters.filter(f => f !== 'pmax' && f !== 'catalog_products');
   const finalRows = wantedAdTypes.length === 0
     ? mappedRows
     : mappedRows.filter(r => wantedAdTypes.includes(r.adType as 'standard' | 'catalog'));
@@ -773,6 +785,239 @@ async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRo
   return { rows: finalRows, log: { source: 'Meta Ads', query: logDesc, rowsReturned: finalRows.length } };
 }
 
+// ─── Google Ads (produtos de catálogo via shopping_performance_view) ──────────
+
+interface GadsProductRow {
+  segments?: {
+    productItemId?: string;
+    productTitle?: string;
+    productBrand?: string;
+  };
+  campaign?: {
+    id?: string;
+    name?: string;
+  };
+  metrics?: {
+    costMicros?: string;
+    impressions?: string;
+    clicks?: string;
+    conversions?: string;
+    conversionsValue?: string;
+  };
+}
+
+async function fetchGoogleCatalogProducts(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
+  const token = await getGadsToken();
+
+  const campaignFilter = body.campaignId
+    ? `AND campaign.id = '${body.campaignId}'`
+    : '';
+
+  const gaql = `
+    SELECT
+      segments.product_item_id,
+      segments.product_title,
+      segments.product_brand,
+      campaign.id,
+      campaign.name,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions,
+      metrics.conversions_value
+    FROM shopping_performance_view
+    WHERE segments.date BETWEEN '${body.dateFrom}' AND '${body.dateTo}'
+      AND metrics.cost_micros > 0
+      ${campaignFilter}
+    ORDER BY metrics.cost_micros DESC
+    LIMIT ${body.limit * 2}
+  `.trim();
+
+  const res = await fetch(GADS_ENDPOINT(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
+      'login-customer-id': (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? '').replace(/-/g, ''),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query: gaql }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Google Ads (produtos) HTTP ${res.status}: ${err.slice(0, 200)}`);
+  }
+
+  const text = await res.text();
+  const rawRows: GadsProductRow[] = [];
+
+  try {
+    const parsed = JSON.parse(text);
+    const chunks = Array.isArray(parsed) ? parsed : [parsed];
+    for (const chunk of chunks) {
+      if (chunk.error) throw new Error(chunk.error.message);
+      if (chunk.results) rawRows.push(...chunk.results);
+    }
+  } catch {
+    for (const line of text.split('\n').filter(Boolean)) {
+      try {
+        const chunk = JSON.parse(line);
+        if (chunk.results) rawRows.push(...chunk.results);
+      } catch { /* ignora */ }
+    }
+  }
+
+  const mappedRows: CreativeRow[] = rawRows.map((row): CreativeRow => {
+    const seg = row.segments;
+    const m = row.metrics;
+    const camp = row.campaign;
+
+    const spend = parseInt(m?.costMicros ?? '0') / 1_000_000;
+    const impressions = parseInt(m?.impressions ?? '0');
+    const clicks = parseInt(m?.clicks ?? '0');
+    const conversions = parseFloat(m?.conversions ?? '0');
+    const revenue = parseFloat(m?.conversionsValue ?? '0');
+    const roas = spend > 0 ? revenue / spend : 0;
+    const cpa = conversions > 0 ? spend / conversions : 0;
+    const ctr = impressions > 0 ? clicks / impressions : 0;
+
+    const productTitle = seg?.productTitle ?? 'Produto sem título';
+    const productBrand = seg?.productBrand ?? null;
+
+    return {
+      platform: 'google',
+      adId: seg?.productItemId ?? '',
+      adName: productTitle,
+      campaignName: camp?.name ?? 'N/D',
+      adGroupName: productBrand,
+      campaignType: 'Catálogo de Produtos',
+      thumbnailUrl: null,
+      headline: productTitle,
+      description: productBrand,
+      adText: productTitle,
+      spend,
+      impressions,
+      clicks,
+      ctr,
+      conversions,
+      revenue,
+      roas,
+      cpa,
+      viewConversions: null,
+      adType: 'catalog_products',
+      creativeType: 'Produto',
+    };
+  });
+
+  const logDesc = [
+    `canal: google (produtos)`,
+    `período: ${body.dateFrom} → ${body.dateTo}`,
+    `source: shopping_performance_view`,
+    `retornados: ${rawRows.length} → final: ${mappedRows.length}`,
+  ].join(' | ');
+
+  return {
+    rows: mappedRows.slice(0, body.limit),
+    log: { source: 'Google Ads (produtos catálogo)', query: logDesc, rowsReturned: mappedRows.length },
+  };
+}
+
+// ─── Meta Ads (produtos de catálogo via insights?breakdowns=product_id) ───────
+
+interface MetaProductRow {
+  product_id?: string;
+  impressions?: string;
+  clicks?: string;
+  spend?: string;
+  purchase_roas?: Array<{ action_type: string; value: string }>;
+}
+
+async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
+  const token = process.env.META_ACCESS_TOKEN ?? '';
+  const rawAccountId = process.env.META_AD_ACCOUNT_ID ?? '';
+  const accountId = rawAccountId.startsWith('act_') ? rawAccountId : `act_${rawAccountId}`;
+  const timeRange = JSON.stringify({ since: body.dateFrom, until: body.dateTo });
+
+  const filteringBase: Array<{ field: string; operator: string; value: unknown }> = [];
+  if (body.campaignId) {
+    filteringBase.push({ field: 'campaign.id', operator: 'EQUAL', value: body.campaignId });
+  }
+
+  const fields = ['impressions', 'clicks', 'spend', 'purchase_roas'].join(',');
+
+  const url =
+    `${GRAPH}/${accountId}/insights` +
+    `?breakdowns=product_id` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&time_range=${encodeURIComponent(timeRange)}` +
+    `&action_attribution_windows=${encodeURIComponent('["7d_click","1d_view"]')}` +
+    (filteringBase.length > 0 ? `&filtering=${encodeURIComponent(JSON.stringify(filteringBase))}` : '') +
+    `&sort=spend_descending` +
+    `&limit=${body.limit}`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Meta Ads (produtos) HTTP ${res.status}: ${err.slice(0, 200)}`);
+  }
+
+  const json = await res.json() as { data?: MetaProductRow[]; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+
+  const productRows = json.data ?? [];
+
+  const mappedRows: CreativeRow[] = productRows.map((row): CreativeRow => {
+    const spend = parseFloat(row.spend ?? '0');
+    const impressions = parseInt(row.impressions ?? '0');
+    const clicks = parseInt(row.clicks ?? '0');
+    const ctr = impressions > 0 ? clicks / impressions : 0;
+    const roasRaw = parseFloat(row.purchase_roas?.[0]?.value ?? '0');
+    const roas = roasRaw > 0 ? roasRaw : 0;
+    const revenue = spend * roas;
+    const productId = row.product_id ?? '';
+
+    return {
+      platform: 'meta',
+      adId: productId,
+      adName: `Produto ${productId}`,
+      campaignName: 'N/D',
+      adGroupName: null,
+      campaignType: 'Catálogo de Produtos',
+      thumbnailUrl: null,
+      headline: `Produto ${productId}`,
+      description: null,
+      adText: `Produto ${productId}`,
+      spend,
+      impressions,
+      clicks,
+      ctr,
+      conversions: 0,
+      revenue,
+      roas,
+      cpa: 0,
+      viewConversions: null,
+      adType: 'catalog_products',
+      creativeType: 'Produto',
+    };
+  });
+
+  const logDesc = [
+    `account: ${accountId}`,
+    `período: ${body.dateFrom} → ${body.dateTo}`,
+    `source: insights?breakdowns=product_id`,
+    `retornados: ${productRows.length}`,
+  ].join(' | ');
+
+  return {
+    rows: mappedRows,
+    log: { source: 'Meta Ads (produtos catálogo)', query: logDesc, rowsReturned: mappedRows.length },
+  };
+}
+
 // ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -783,21 +1028,24 @@ export async function POST(request: Request) {
   }
 
   const activeFilters: AdTypeFilter[] = body.adTypeFilters ?? [];
-  const wantStandard = activeFilters.length === 0 || activeFilters.includes('standard');
-  const wantCatalog  = activeFilters.length === 0 || activeFilters.includes('catalog');
-  const wantPMax     = activeFilters.length === 0 || activeFilters.includes('pmax');
+  const wantStandard        = activeFilters.length === 0 || activeFilters.includes('standard');
+  const wantCatalog         = activeFilters.length === 0 || activeFilters.includes('catalog');
+  const wantPMax            = activeFilters.length === 0 || activeFilters.includes('pmax');
+  // catalog_products é sempre explícito — nunca incluído em "todos"
+  const wantCatalogProducts = activeFilters.includes('catalog_products');
 
   const errors: string[] = [];
   const queryLogs: QueryLog[] = [];
   let google: CreativeRow[] = [];
   let meta: CreativeRow[] = [];
 
-  // Google: padrão/catálogo via ad_group_ad, PMax via asset_group_asset
+  // Google: padrão/catálogo via ad_group_ad, PMax via asset_group_asset, produtos via shopping_performance_view
   if (body.channel === 'google' || body.channel === 'all') {
     const emptyResult = { rows: [] as CreativeRow[], log: { source: '', query: 'skipped', rowsReturned: 0 } };
     const results = await Promise.allSettled([
       (wantStandard || wantCatalog) ? fetchGoogleCreatives(body) : Promise.resolve(emptyResult),
       wantPMax ? fetchGooglePMaxAssets(body) : Promise.resolve(emptyResult),
+      wantCatalogProducts ? fetchGoogleCatalogProducts(body) : Promise.resolve(emptyResult),
     ]);
 
     if (results[0].status === 'fulfilled') {
@@ -815,6 +1063,14 @@ export async function POST(request: Request) {
     } else if (wantPMax) {
       errors.push(`Google Ads PMax: ${(results[1].reason as Error).message}`);
     }
+
+    if (results[2].status === 'fulfilled') {
+      const { rows, log } = results[2].value;
+      google = [...google, ...rows];
+      if (log.source) queryLogs.push(log);
+    } else if (wantCatalogProducts) {
+      errors.push(`Google Ads (produtos): ${(results[2].reason as Error).message}`);
+    }
   }
 
   // Meta: sem PMax equivalente — pular se só PMax selecionado
@@ -825,6 +1081,17 @@ export async function POST(request: Request) {
       queryLogs.push(log);
     } catch (err) {
       errors.push(`Meta Ads: ${(err as Error).message}`);
+    }
+  }
+
+  // Meta: produtos de catálogo via breakdowns=product_id
+  if ((body.channel === 'meta' || body.channel === 'all') && wantCatalogProducts) {
+    try {
+      const { rows, log } = await fetchMetaCatalogProducts(body);
+      meta = [...meta, ...rows];
+      queryLogs.push(log);
+    } catch (err) {
+      errors.push(`Meta Ads (produtos): ${(err as Error).message}`);
     }
   }
 

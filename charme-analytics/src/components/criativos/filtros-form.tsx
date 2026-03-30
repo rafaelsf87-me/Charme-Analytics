@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type Canal = 'google' | 'meta' | 'all';
-export type AdTypeFilter = 'standard' | 'catalog' | 'pmax';
+export type AdTypeFilter = 'standard' | 'catalog' | 'pmax' | 'catalog_products';
 
 export interface FiltrosState {
   channel: Canal;
@@ -50,18 +50,21 @@ const META_TYPES = [
 
 const AD_TYPE_OPTIONS: Record<Canal, { value: AdTypeFilter; label: string; desc: string }[]> = {
   google: [
-    { value: 'standard', label: 'Padrão',              desc: 'Search, Display, Demand Gen (excl. Catálogo)' },
-    { value: 'catalog',  label: 'Catálogo de Produtos', desc: 'Shopping / Demand Gen Produto' },
-    { value: 'pmax',     label: 'PMax',                desc: 'Performance Max — assets visuais' },
+    { value: 'standard',        label: 'Padrão',              desc: 'Search, Display, Demand Gen (excl. Catálogo)' },
+    { value: 'catalog',         label: 'Anúncios Catálogo',   desc: 'Shopping / Demand Gen Produto — nível de anúncio' },
+    { value: 'pmax',            label: 'PMax',                desc: 'Performance Max — assets visuais' },
+    { value: 'catalog_products', label: 'Produtos Catálogo',  desc: 'Performance por produto via shopping_performance_view' },
   ],
   meta: [
-    { value: 'standard', label: 'Padrão',              desc: 'Imagem, Vídeo, Carrossel (excl. Catálogo)' },
-    { value: 'catalog',  label: 'Catálogo de Produtos', desc: 'DPA — Catálogo Dinâmico' },
+    { value: 'standard',        label: 'Padrão',              desc: 'Imagem, Vídeo, Carrossel (excl. Catálogo)' },
+    { value: 'catalog',         label: 'Anúncios Catálogo',   desc: 'DPA / Advantage+ Catalog — nível de anúncio' },
+    { value: 'catalog_products', label: 'Produtos Catálogo',  desc: 'Performance por produto via breakdowns=product_id' },
   ],
   all: [
-    { value: 'standard', label: 'Padrão',              desc: 'Google: Search/Display/DG · Meta: Imagem/Vídeo/Carrossel' },
-    { value: 'catalog',  label: 'Catálogo de Produtos', desc: 'Google: Shopping/DG Produto · Meta: DPA Catálogo' },
-    { value: 'pmax',     label: 'PMax',                desc: 'Google Performance Max' },
+    { value: 'standard',        label: 'Padrão',              desc: 'Google: Search/Display/DG · Meta: Imagem/Vídeo/Carrossel' },
+    { value: 'catalog',         label: 'Anúncios Catálogo',   desc: 'Google: Shopping/DG Produto · Meta: DPA/Advantage+ Catalog' },
+    { value: 'pmax',            label: 'PMax',                desc: 'Google Performance Max' },
+    { value: 'catalog_products', label: 'Produtos Catálogo',  desc: 'Performance por produto — Google: shopping_performance_view · Meta: product_id breakdown' },
   ],
 };
 
