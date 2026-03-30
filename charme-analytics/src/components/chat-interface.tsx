@@ -89,7 +89,8 @@ function parseProgress(chunk: string): { events: ProgressEvent[]; text: string }
 
 // ─── Componente principal ────────────────────────────────────────────────────
 
-const CONTEXT_LIMIT = 20; // nº de respostas do assistente antes de alertar
+// Janela da API = 40 msgs (~20 trocas). Alertar quando faltam 8 trocas = na 12ª resposta.
+const CONTEXT_LIMIT = 12;
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -148,7 +149,7 @@ export function ChatInterface() {
     setContextAlertDismissed(false); // reaparecer alerta após nova mensagem se ainda no limite
 
     try {
-      const payload = updatedMessages.slice(-10);
+      const payload = updatedMessages.slice(-40);
       abortControllerRef.current = new AbortController();
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -281,8 +282,8 @@ export function ChatInterface() {
             <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <span className="text-base shrink-0">⚠️</span>
               <div className="flex-1 min-w-0">
-                <span className="font-medium">Contexto no limite</span>
-                {' — '}posso começar a alucinar.
+                <span className="font-medium">Contexto chegando no limite</span>
+                {' — '}restam ~{Math.max(0, 20 - messages.filter(m => m.role === 'assistant').length)} trocas antes de eu começar a alucinar.
                 <div className="flex flex-wrap gap-2 mt-2">
                   <button
                     onClick={() => sendMessage('Gere um resumo executivo em tópicos do que foi analisado nessa conversa.')}
