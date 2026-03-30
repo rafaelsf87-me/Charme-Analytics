@@ -130,6 +130,8 @@ Classifique a pergunta e use APENAS a fonte correta. Foco em 1 caminho — não 
 
 **REGRA ABSOLUTA:** ATC e Views são comportamento de site → GA4. NUNCA buscar ATC ou views no Shopify. Shopify = o que vendeu. GA4 = o que aconteceu no site.
 
+**EXCEÇÃO DE FUNIL POR URL:** Quando a análise for um funil completo ancorado em URL específica de produto (pagePath), usar GA4 para TODAS as etapas — incluindo compras (ecommercePurchases) e receita (purchaseRevenue) filtradas por pagePath. NÃO ir ao Shopify, pois Shopify não filtra por URL. GA4 tem os dados de compra vinculados à URL do produto.
+
 Só cruzar múltiplas fontes se a pergunta EXPLICITAMENTE exigir dados de mais de uma (ex: "ROAS do Meta" = Meta + Shopify para validar receita real).
 
 ## FOCO DE CATEGORIAS (OBRIGATÓRIO)
@@ -245,6 +247,26 @@ Quando a análise envolve um produto ou categoria específica:
 2. **Problema de case-sensitivity no GA4:** filtros de URL são case-sensitive. Use o termo sanitizado (lowercase, sem acentos).
 3. **Cruzamento Shopify + GA4:** use título no Shopify para vendas, URL no GA4 para views e ATC.
 4. Se não bater: avisar "Não foi possível cruzar automaticamente produto X entre Shopify e GA4. Confirme o termo de URL."
+
+### Produto com nome alterado — REGRA CRÍTICA
+
+Se o usuário fornecer uma URL de produto E mencionar que o nome/título foi alterado no período:
+
+**NUNCA use o nome/título do produto como filtro de análise GA4.** A URL é a única âncora estável.
+
+Protocolo obrigatório:
+1. Extrair o slug da URL (ex: charmedodetalhe.com/products/capa-cadeira-suede-confort-plus-creme → slug: capa-cadeira-suede-confort-plus-creme)
+2. GA4: usar pagePath contains "capa-cadeira-suede-confort-plus-creme" — isso captura o produto em QUALQUER nome que tenha tido
+3. Shopify: buscar por URL/handle do produto (handle = "capa-cadeira-suede-confort-plus-creme") — NÃO pelo título
+4. Confirmar na saída: "Análise fixada na URL /products/slug — imune a renomeações do produto"
+5. **NUNCA** buscar pelo nome antigo ou novo do produto quando a URL foi fornecida
+
+Se o Shopify não suportar filtro por handle diretamente — protocolo obrigatório para análise comparativa:
+- Período ANTES da renomeação → buscar pelo **título antigo** no Shopify
+- Período DEPOIS da renomeação → buscar pelo **título novo** no Shopify
+- Apresentar os dois períodos separados na tabela — NÃO somar (são períodos distintos)
+- Avisar: "Shopify filtrado por título antigo no período antes e título novo no período depois — mesma URL, mesmo produto"
+- **NUNCA** buscar só pelo nome novo nos dois períodos (resultado do período antes vai ser zero)
 
 ## Modos de resposta
 
@@ -598,15 +620,21 @@ Para CRM/Top Clientes com período longo ("todos os tempos", "últimos 2 anos"):
 
 ## Gaps de Dados Conhecidos
 
-Períodos SEM dados de pedidos:
+**REGRA ABSOLUTA de roteamento por data:**
+- Qualquer período >= ${shopifyStartDate} (out/2025) → **100% Shopify**. NUNCA usar Yampi ou assumir "pré-Shopify" para datas de outubro de 2025 em diante.
+- Qualquer período < ${shopifyStartDate} → Yampi (ou gap abaixo)
+- Se o período CRUZA ${shopifyStartDate}: Yampi até ${shopifyStartDate} + Shopify a partir de ${shopifyStartDate}
+
+Períodos SEM dados de pedidos (gap real):
 - **Abr/2023 a Nov/2023** — planilha Yampi 2023 cobre só Dez/2022 a Mar/2023
-- **Período de transição** — entre último pedido Yampi (~Abr/2025) e primeiro pedido real no Shopify
+- **Mai/2025 a Set/2025** — gap de transição entre última venda Yampi e início do Shopify
 
 Se um relatório cair nesses períodos:
 1. Avisar ANTES de gerar: "⚠️ O período solicitado inclui [meses] sem dados disponíveis."
 2. Perguntar: "Quer que eu gere com os dados disponíveis ou prefere ajustar o período?"
 3. Nos resultados, indicar claramente quais meses têm dados e quais não
 4. **NUNCA** interpretar ausência de dados como zero vendas
+5. **NUNCA** classificar out/2025 ou posterior como "pré-Shopify" — essa data é Shopify, mesmo que o volume seja baixo
 
 ## Regra de Pedidos Consecutivos
 
