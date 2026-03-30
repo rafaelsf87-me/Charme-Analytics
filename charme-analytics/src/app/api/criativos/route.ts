@@ -361,6 +361,63 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<{ rows: Creative
     return true;
   });
 
+  // Enriquecer Shopping/catalog ads com thumbnail do produto top via shopping_performance_view
+  const catalogRows = mapped.filter(r => r.adType === 'catalog');
+  if (catalogRows.length > 0) {
+    try {
+      const imgGaql = `
+        SELECT
+          campaign.name,
+          segments.product_image_url,
+          metrics.cost_micros
+        FROM shopping_performance_view
+        WHERE segments.date BETWEEN '${body.dateFrom}' AND '${body.dateTo}'
+          AND metrics.cost_micros > 0
+        ORDER BY metrics.cost_micros DESC
+        LIMIT 200
+      `.trim();
+      const imgRes = await fetch(GADS_ENDPOINT(), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
+          'login-customer-id': (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? '').replace(/-/g, ''),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: imgGaql }),
+      });
+
+      if (imgRes.ok) {
+        type ImgRow = { campaign?: { name?: string }; segments?: { productImageUrl?: string }; metrics?: { costMicros?: string } };
+        const imgText = await imgRes.text();
+        const imgRaw: ImgRow[] = [];
+        try {
+          const p = JSON.parse(imgText);
+          const chunks = Array.isArray(p) ? p : [p];
+          for (const c of chunks) { if ((c as { results?: ImgRow[] }).results) imgRaw.push(...(c as { results: ImgRow[] }).results); }
+        } catch { /* ignora */ }
+
+        // Mapa campanha → imagem do produto com mais gasto
+        const campImageMap = new Map<string, string>();
+        for (const r of imgRaw) {
+          const campName = r.campaign?.name ?? '';
+          const imgUrl = r.segments?.productImageUrl ?? '';
+          if (campName && imgUrl && !campImageMap.has(campName)) {
+            campImageMap.set(campName, imgUrl);
+          }
+        }
+
+        // Aplicar thumbnails nos catalog rows
+        for (const r of mapped) {
+          if (r.adType === 'catalog' && !r.thumbnailUrl) {
+            const img = campImageMap.get(r.campaignName);
+            if (img) r.thumbnailUrl = img;
+          }
+        }
+      }
+    } catch { /* thumbnail não é crítico */ }
+  }
+
   const logDesc = [
     `canal: ${body.channel}`,
     `período: ${body.dateFrom} → ${body.dateTo}`,
@@ -792,6 +849,7 @@ interface GadsProductRow {
     productItemId?: string;
     productTitle?: string;
     productBrand?: string;
+    productImageUrl?: string;
   };
   campaign?: {
     id?: string;
@@ -818,6 +876,7 @@ async function fetchGoogleCatalogProducts(body: RequestBody): Promise<{ rows: Cr
       segments.product_item_id,
       segments.product_title,
       segments.product_brand,
+      segments.product_image_url,
       campaign.id,
       campaign.name,
       metrics.cost_micros,
@@ -884,6 +943,7 @@ async function fetchGoogleCatalogProducts(body: RequestBody): Promise<{ rows: Cr
 
     const productTitle = seg?.productTitle ?? 'Produto sem título';
     const productBrand = seg?.productBrand ?? null;
+    const productImageUrl = seg?.productImageUrl ?? null;
 
     return {
       platform: 'google',
@@ -892,7 +952,7 @@ async function fetchGoogleCatalogProducts(body: RequestBody): Promise<{ rows: Cr
       campaignName: camp?.name ?? 'N/D',
       adGroupName: productBrand,
       campaignType: 'Catálogo de Produtos',
-      thumbnailUrl: null,
+      thumbnailUrl: productImageUrl,
       headline: productTitle,
       description: productBrand,
       adText: productTitle,
@@ -930,7 +990,9 @@ interface MetaProductRow {
   impressions?: string;
   clicks?: string;
   spend?: string;
-  purchase_roas?: Array<{ action_type: string; value: string }>;
+  // action_values retorna receita real por produto (purchase_roas não agrega corretamente com breakdowns=product_id)
+  action_values?: Array<{ action_type: string; value: string }>;
+  actions?: Array<{ action_type: string; value: string }>;
 }
 
 async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: CreativeRow[]; log: QueryLog }> {
@@ -944,7 +1006,7 @@ async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: Crea
     filteringBase.push({ field: 'campaign.id', operator: 'EQUAL', value: body.campaignId });
   }
 
-  const fields = ['impressions', 'clicks', 'spend', 'purchase_roas'].join(',');
+  const fields = ['impressions', 'clicks', 'spend', 'action_values', 'actions'].join(',');
 
   const url =
     `${GRAPH}/${accountId}/insights` +
@@ -970,14 +1032,34 @@ async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: Crea
 
   const productRows = json.data ?? [];
 
+  // Batch fetch de imagens dos produtos via Graph API
+  const allProductIds = productRows.map(r => r.product_id).filter((id): id is string => !!id);
+  const imageMap = new Map<string, string>();
+  if (allProductIds.length > 0) {
+    try {
+      const batchImageUrl =
+        `${GRAPH}?ids=${allProductIds.slice(0, 50).join(',')}` +
+        `&fields=image_url,name` +
+        `&access_token=${token}`;
+      const imgRes = await fetch(batchImageUrl);
+      if (imgRes.ok) {
+        const imgJson = await imgRes.json() as Record<string, { image_url?: string; name?: string }>;
+        for (const [id, data] of Object.entries(imgJson)) {
+          if (data.image_url) imageMap.set(id, data.image_url);
+        }
+      }
+    } catch { /* imagem não é crítica — continua sem thumbnail */ }
+  }
+
   const mappedRows: CreativeRow[] = productRows.map((row): CreativeRow => {
     const spend = parseFloat(row.spend ?? '0');
     const impressions = parseInt(row.impressions ?? '0');
     const clicks = parseInt(row.clicks ?? '0');
     const ctr = impressions > 0 ? clicks / impressions : 0;
-    const roasRaw = parseFloat(row.purchase_roas?.[0]?.value ?? '0');
-    const roas = roasRaw > 0 ? roasRaw : 0;
-    const revenue = spend * roas;
+    const revenue = extractMetaAction(row.action_values, 'purchase');
+    const conversions = extractMetaAction(row.actions, 'purchase');
+    const roas = spend > 0 ? revenue / spend : 0;
+    const cpa = conversions > 0 ? spend / conversions : 0;
     const productId = row.product_id ?? '';
 
     return {
@@ -987,7 +1069,7 @@ async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: Crea
       campaignName: 'N/D',
       adGroupName: null,
       campaignType: 'Catálogo de Produtos',
-      thumbnailUrl: null,
+      thumbnailUrl: imageMap.get(productId) ?? null,
       headline: `Produto ${productId}`,
       description: null,
       adText: `Produto ${productId}`,
@@ -995,10 +1077,10 @@ async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: Crea
       impressions,
       clicks,
       ctr,
-      conversions: 0,
+      conversions,
       revenue,
       roas,
-      cpa: 0,
+      cpa,
       viewConversions: null,
       adType: 'catalog_products',
       creativeType: 'Produto',
