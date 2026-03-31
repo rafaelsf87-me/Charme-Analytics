@@ -17,6 +17,7 @@ export interface FiltrosState {
   campaignId?: string;
   campaignName?: string;
   limit: number;
+  minSpend: number;
   adTypeFilters: AdTypeFilter[];
   periodLabel: string | null;
 }
@@ -121,6 +122,7 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
   const [campaignId, setCampaignId] = useState<string | undefined>();
   const [campaignName, setCampaignName] = useState<string | undefined>();
   const [limit, setLimit] = useState(20);
+  const [minSpend, setMinSpend] = useState(1000);
   const [adTypeFilters, setAdTypeFilters] = useState<AdTypeFilter[]>([]);
   const [periodLabel, setPeriodLabel] = useState<string | null>('7d');
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
@@ -230,7 +232,7 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
     if (err) { setDateError(err); return; }
     onSubmit({
       channel, dateFrom, dateTo, campaignTypes,
-      campaignId, campaignName, limit,
+      campaignId, campaignName, limit, minSpend,
       adTypeFilters, periodLabel,
     });
   }
@@ -471,6 +473,28 @@ export function FiltrosForm({ onSubmit, loading = false }: FiltrosFormProps) {
         {channel === 'all' && (
           <p className="mt-1 text-xs text-zinc-400">Por canal (total até {limit * 2})</p>
         )}
+      </div>
+
+      {/* Gasto Mínimo */}
+      <div>
+        <label className="block text-sm font-medium text-zinc-700 mb-2">Gasto Mínimo</label>
+        <div className="flex gap-2">
+          {[100, 300, 500, 1000].map(v => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setMinSpend(v)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                minSpend === v
+                  ? 'bg-zinc-900 text-white border-zinc-900'
+                  : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300'
+              }`}
+            >
+              R${v >= 1000 ? '1k' : v}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-zinc-400">Exibe apenas anúncios com spend ≥ R${minSpend}</p>
       </div>
 
       {/* Submit */}

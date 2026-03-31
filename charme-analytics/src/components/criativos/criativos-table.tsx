@@ -103,14 +103,15 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
 
   const filtered = useMemo(() => {
     const q = filterText.toLowerCase();
-    if (!q) return rows;
-    return rows.filter(r =>
+    const spendFiltered = rows.filter(r => r.spend >= (filtros.minSpend ?? 0));
+    if (!q) return spendFiltered;
+    return spendFiltered.filter(r =>
       r.adName.toLowerCase().includes(q) ||
       r.campaignName.toLowerCase().includes(q) ||
       r.campaignType.toLowerCase().includes(q) ||
       (r.headline ?? '').toLowerCase().includes(q)
     );
-  }, [rows, filterText]);
+  }, [rows, filterText, filtros.minSpend]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -166,6 +167,7 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="bg-charme border-b border-charme/20">
+              <th className="px-2 py-2.5 w-5" title="Status"></th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold text-white/70 w-8">#</th>
               {COLS.map(col => {
                 const isNarrow = ['ctr','conversions','roas','cpa','viewConversions'].includes(col.key as string);
@@ -195,7 +197,7 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={COLS.length + 1} className="text-center py-12 text-sm text-zinc-400">
+                <td colSpan={COLS.length + 2} className="text-center py-12 text-sm text-zinc-400">
                   Nenhum criativo encontrado
                 </td>
               </tr>
@@ -205,6 +207,13 @@ export function CriativosTable({ rows, filtros, errors }: CriativosTableProps) {
                   key={`${row.platform}-${row.adId}-${i}`}
                   className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors"
                 >
+                  {/* Status */}
+                  <td className="px-2 py-3 align-top">
+                    <span
+                      title={row.status === 'active' ? 'Ativo' : 'Pausado'}
+                      className={`block w-2 h-2 rounded-full mt-1 ${row.status === 'active' ? 'bg-green-500' : 'bg-zinc-400'}`}
+                    />
+                  </td>
                   {/* # */}
                   <td className="px-3 py-3 text-xs text-zinc-400 align-top">{i + 1}</td>
 

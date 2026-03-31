@@ -25,6 +25,8 @@ export interface CreativeRow {
   viewConversions: number | null;
   adType: 'standard' | 'catalog' | 'pmax' | 'catalog_products';
   creativeType: string | null;
+  status: 'active' | 'paused';
+  accountId?: string;
 }
 
 type AdTypeFilter = 'standard' | 'catalog' | 'pmax' | 'catalog_products';
@@ -170,6 +172,7 @@ interface GadsAdRow {
         descriptions?: Array<{ text?: string }>;
       };
     };
+    status?: string;
   };
   adGroup?: {
     name?: string;
@@ -236,6 +239,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<{ rows: Creative
       ad_group_ad.ad.responsive_search_ad.descriptions,
       ad_group_ad.ad.responsive_display_ad.headlines,
       ad_group_ad.ad.responsive_display_ad.descriptions,
+      ad_group_ad.status,
       ad_group.name,
       campaign.id,
       campaign.name,
@@ -249,7 +253,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<{ rows: Creative
       metrics.view_through_conversions
     FROM ad_group_ad
     WHERE segments.date BETWEEN '${body.dateFrom}' AND '${body.dateTo}'
-      AND ad_group_ad.status = 'ENABLED'
+      AND ad_group_ad.status IN ('ENABLED', 'PAUSED')
       AND campaign.status = 'ENABLED'
       AND metrics.cost_micros > 0
       ${adTypeCondition}
@@ -327,6 +331,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<{ rows: Creative
     const isCatalog = channelType === 'SHOPPING' || adTypeStr === 'DEMAND_GEN_PRODUCT_AD';
     const adTypeCategory: 'standard' | 'catalog' = isCatalog ? 'catalog' : 'standard';
     const creativeType = channelType === 'SHOPPING' ? 'Shopping' : mapGadsAdType(adTypeStr);
+    const adStatus = row.adGroupAd?.status === 'PAUSED' ? 'paused' : 'active';
 
     return {
       platform: 'google',
@@ -350,6 +355,7 @@ async function fetchGoogleCreatives(body: RequestBody): Promise<{ rows: Creative
       viewConversions: parseInt(m?.viewThroughConversions ?? '0') || null,
       adType: adTypeCategory,
       creativeType: creativeType || null,
+      status: adStatus,
     };
   });
 
@@ -631,6 +637,7 @@ async function fetchGooglePMaxAssets(body: RequestBody): Promise<{ rows: Creativ
         viewConversions: null,
         adType: 'pmax',
         creativeType,
+        status: 'active',
       });
     }
   }
@@ -663,6 +670,7 @@ interface MetaInsightRow {
 interface MetaCreativeNode {
   id?: string;
   name?: string;
+  effective_status?: string;
   creative?: {
     thumbnail_url?: string;
     image_url?: string;
@@ -737,7 +745,7 @@ async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRo
 
   if (adIds.length > 0) {
     const batchFields = encodeURIComponent(
-      'id,name,creative{thumbnail_url,image_url,title,body,video_id,object_story_spec{template_data},asset_feed_spec},campaign{objective},adset{promoted_object{product_set_id,product_catalog_id}}'
+      'id,name,effective_status,creative{thumbnail_url,image_url,title,body,video_id,object_story_spec{template_data},asset_feed_spec},campaign{objective},adset{promoted_object{product_set_id,product_catalog_id}}'
     );
     const batchUrl =
       `${GRAPH}?ids=${adIds.join(',')}` +
@@ -819,6 +827,8 @@ async function fetchMetaCreatives(body: RequestBody): Promise<{ rows: CreativeRo
       viewConversions: null,
       adType: isCatalog ? 'catalog' : 'standard',
       creativeType,
+      status: (creative?.effective_status === 'ACTIVE' || creative?.effective_status === 'CAMPAIGN_ACTIVE' || creative?.effective_status === 'ADSET_ACTIVE') ? 'active' : creative?.effective_status ? 'paused' : 'active',
+      accountId,
     };
   });
 
@@ -967,6 +977,7 @@ async function fetchGoogleCatalogProducts(body: RequestBody): Promise<{ rows: Cr
       viewConversions: null,
       adType: 'catalog_products',
       creativeType: 'Produto',
+      status: 'active',
     };
   });
 
@@ -1084,6 +1095,7 @@ async function fetchMetaCatalogProducts(body: RequestBody): Promise<{ rows: Crea
       viewConversions: null,
       adType: 'catalog_products',
       creativeType: 'Produto',
+      status: 'active',
     };
   });
 

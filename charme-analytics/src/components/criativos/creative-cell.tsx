@@ -5,8 +5,9 @@ interface CreativeCellProps {
 }
 
 function adUrl(row: CreativeRow): string | null {
-  if (row.platform === 'meta' && row.adId) {
-    return `https://www.facebook.com/ads/library/?id=${row.adId}`;
+  if (row.platform === 'meta' && row.adId && row.accountId) {
+    const accountNum = row.accountId.replace('act_', '');
+    return `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${accountNum}&selected_ad_ids=${row.adId}`;
   }
   return null;
 }
