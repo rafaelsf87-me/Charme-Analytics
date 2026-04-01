@@ -4,6 +4,7 @@ import {
   shopify_get_top_customers,
   shopify_get_products,
   shopify_get_top_products,
+  shopify_get_order_mix,
 } from './shopify';
 import { ga4_run_report, ga4_get_top_pages, ga4_get_item_report } from './ga4';
 import { google_ads_campaign_report, google_ads_search_query } from './google-ads';
@@ -38,7 +39,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
         limit: {
           type: 'number',
-          description: 'Número máximo de pedidos (1-100, padrão: 50)',
+          description: 'Número de pedidos a exibir na listagem (1-100, padrão: 50). Não afeta aggregações — a tool sempre pagina todos os pedidos internamente.',
         },
       },
       required: ['date_from', 'date_to'],
@@ -112,6 +113,19 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: 'shopify_get_order_mix',
+    description:
+      'Analisa MIX de pedidos Shopify: calcula % de pedidos com 1 SKU vs +1 SKU distinto (indicador de upsell "frete grátis"). Pagina TODOS os pedidos pagos do período — não usa amostra. Retorna contagem, %, receita total e ticket médio por grupo. Use quando o usuário perguntar sobre mix de produtos, pedidos com mais de 1 item, efetividade do frete grátis ou comportamento de compra.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date_from: { type: 'string', description: 'Data inicial YYYY-MM-DD' },
+        date_to: { type: 'string', description: 'Data final YYYY-MM-DD' },
+      },
+      required: ['date_from', 'date_to'],
     },
   },
   {
@@ -343,6 +357,8 @@ export async function executeTool(
       return shopify_get_top_products(i);
     case 'shopify_get_products':
       return shopify_get_products(i);
+    case 'shopify_get_order_mix':
+      return shopify_get_order_mix(i);
     case 'ga4_run_report':
       return ga4_run_report(i);
     case 'ga4_get_item_report':

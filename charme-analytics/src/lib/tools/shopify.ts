@@ -479,6 +479,137 @@ export async function shopify_get_top_products(input: TopProductsInput): Promise
   }
 }
 
+// ─── shopify_get_order_mix ───────────────────────────────────────────────────
+
+interface OrderMixInput {
+  date_from: string;
+  date_to: string;
+}
+
+/**
+ * Calcula % de pedidos com +1 SKU distinto (mix de produtos).
+ * Útil para medir efetividade de incentivos de ticket médio (ex: "frete grátis acima de X").
+ * Analisa TODOS os pedidos pagos do período, não uma amostra.
+ */
+export async function shopify_get_order_mix(input: OrderMixInput): Promise<string> {
+  const { date_from, date_to } = input;
+
+  const validErr = validateDates(date_from, date_to);
+  if (validErr) return `ERRO [Shopify]: ${validErr}`;
+
+  try {
+    interface MixOrderNode {
+      name: string;
+      displayFinancialStatus: string;
+      totalPriceSet: { shopMoney: { amount: string } };
+      lineItems: { edges: Array<{ node: { title: string; quantity: number; sku: string | null } }> };
+    }
+    interface MixOrdersData {
+      orders: {
+        pageInfo?: { hasNextPage: boolean; endCursor: string };
+        edges: Array<{ node: MixOrderNode }>;
+      };
+    }
+
+    const allOrders: MixOrderNode[] = [];
+    let cursor: string | null = null;
+    let hasNextPage = true;
+
+    while (hasNextPage) {
+      const afterClause = cursor ? `, after: "${cursor}"` : '';
+      const q = `{
+        orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to}", sortKey: CREATED_AT) {
+          pageInfo { hasNextPage endCursor }
+          edges {
+            node {
+              name
+              displayFinancialStatus
+              totalPriceSet { shopMoney { amount } }
+              lineItems(first: 50) {
+                edges { node { title quantity sku } }
+              }
+            }
+          }
+        }
+      }`;
+      const data = await shopifyQuery<MixOrdersData>(q);
+      allOrders.push(...data.orders.edges.map(e => e.node));
+      hasNextPage = data.orders.pageInfo?.hasNextPage ?? false;
+      cursor = data.orders.pageInfo?.endCursor ?? null;
+    }
+
+    const paid = allOrders.filter(o => PAID_STATUSES.has(o.displayFinancialStatus));
+    if (paid.length === 0) {
+      return `[SHOPIFY] Nenhum pedido pago encontrado no período ${date_from} a ${date_to}.`;
+    }
+
+    // Para cada pedido: conta SKUs distintos (usa título como fallback se SKU nulo)
+    let singleSku = 0;
+    let multiSku = 0;
+    let totalItems = 0;
+    let totalRevenueSingle = 0;
+    let totalRevenueMulti = 0;
+    const multiSkuSamples: Array<{ name: string; revenue: number; products: string[] }> = [];
+
+    for (const order of paid) {
+      const items = order.lineItems.edges.map(e => e.node);
+      const uniqueKeys = new Set(items.map(i => i.sku ?? i.title));
+      const orderRevenue = parseFloat(order.totalPriceSet.shopMoney.amount);
+      totalItems += items.reduce((s, i) => s + i.quantity, 0);
+
+      if (uniqueKeys.size > 1) {
+        multiSku++;
+        totalRevenueMulti += orderRevenue;
+        // Captura até 5 exemplos reais para o modelo citar
+        if (multiSkuSamples.length < 5) {
+          multiSkuSamples.push({
+            name: order.name,
+            revenue: orderRevenue,
+            products: items.map(i => `${i.title}${i.quantity > 1 ? ` (x${i.quantity})` : ''}`),
+          });
+        }
+      } else {
+        singleSku++;
+        totalRevenueSingle += orderRevenue;
+      }
+    }
+
+    const pctMulti = (multiSku / paid.length * 100).toFixed(1);
+    const pctSingle = (singleSku / paid.length * 100).toFixed(1);
+    const ticketMulti = multiSku > 0 ? totalRevenueMulti / multiSku : 0;
+    const ticketSingle = singleSku > 0 ? totalRevenueSingle / singleSku : 0;
+    const avgItems = (totalItems / paid.length).toFixed(1);
+
+    const table = compactTable(
+      ['Tipo de Pedido', 'Pedidos', '%', 'Receita Total', 'Ticket Médio'],
+      [
+        ['1 SKU (mono-produto)', String(singleSku), `${pctSingle}%`, formatBRL(totalRevenueSingle), formatBRL(ticketSingle)],
+        ['+1 SKU (mix)',         String(multiSku),  `${pctMulti}%`,  formatBRL(totalRevenueMulti),  formatBRL(ticketMulti)],
+        ['Total',               String(paid.length), '100%', formatBRL(totalRevenueSingle + totalRevenueMulti), formatBRL((totalRevenueSingle + totalRevenueMulti) / paid.length)],
+      ]
+    );
+
+    const samplesText = multiSkuSamples.length > 0
+      ? `\nExemplos reais de pedidos multi-SKU (use APENAS estes ao citar exemplos — nunca invente):\n` +
+        multiSkuSamples.map(s =>
+          `  ${s.name} (${formatBRL(s.revenue)}): ${s.products.join(' | ')}`
+        ).join('\n')
+      : '';
+
+    return (
+      `[SHOPIFY] Mix de SKUs por pedido — ${date_from} a ${date_to} (${paid.length} pedidos pagos)\n` +
+      `ℹ️ Pedidos com +1 SKU distinto = cliente incluiu produtos de categorias/modelos diferentes. Itens da mesma cadeira (ex: 4x mesmo modelo) contam como 1 SKU.\n` +
+      `Média de itens por pedido: ${avgItems}\n` +
+      `${table}` +
+      samplesText
+    );
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes('Timeout')) return `ERRO [Shopify]: Timeout. Tente um período menor.`;
+    return `ERRO [Shopify]: ${msg}`;
+  }
+}
+
 // ─── shopify_get_products ────────────────────────────────────────────────────
 
 interface ProductsInput {
