@@ -419,9 +419,10 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
       }
     : undefined;
 
-  // Para ranking 'both' ou checkout (precisa re-ordenar client-side), buscar mais dados
-  // Destaques: busca 100. Both: precisa de produtos suficientes para ter top e bottom distintos
-  const fetchLimit = hasHighlight || isBoth || isCheckout
+  // Para ranking 'both', checkout, destaques ou quando há product_filter (contexto de categoria),
+  // buscar 100 para garantir ranking completo e benchmarks corretos da categoria.
+  // Sem isso, a tool retorna N itens e o modelo reporta posições erradas ("16º de 18" quando há 25+).
+  const fetchLimit = hasHighlight || isBoth || isCheckout || !!product_filter
     ? 100
     : sort_by === 'atc'
     ? Math.min(safeLimit * 5, 50)

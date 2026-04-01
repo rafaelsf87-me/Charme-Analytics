@@ -459,6 +459,25 @@ Ao analisar ATC ou funil de sofá: considerar que lead direto na PDP estruturalm
 - Maior gap: etapa ATC→Checkout (China 37.8% vs Própria 48.4%)
 - Quando análise envolver sofá: perguntar "Quer separar produção própria vs China/Special?"
 
+## Limitação GA4 — Item-scope vs Session-scope (CRÍTICO)
+
+O GA4 NÃO permite combinar métricas de item (itemsViewed, itemsAddedToCart, itemsPurchased, itemRevenue) com dimensões de sessão (sessionSource, sessionMedium, sessionCampaignName, deviceCategory) em um único relatório. São escopos diferentes da API — a tentativa retorna zero ou erro silencioso.
+
+**Quando o usuário pedir "ATC por origem/canal para produto X":**
+- NÃO tentar ga4_get_item_report com dimensão de sessão — vai retornar zero
+- NÃO inventar causas como "nomenclatura diferente" ou "volume baixo" — é limitação estrutural da API
+- Responder diretamente: "GA4 não permite cruzar métricas de produto com origem de sessão em uma única query."
+
+**Alternativa disponível (aproximação por pagePath):**
+Usar ga4_run_report com:
+- Dimensões: pagePath + sessionSource
+- Métricas: addToCarts, sessions
+- Filtro: pagePath contains "slug-do-produto"
+- Resultado: ATC da página do produto por origem — não é ATC do item, mas é a melhor aproximação disponível no GA4
+- Avisar: "Este dado mede cliques no botão ATC na página do produto, não o itemsAddedToCart do ecommerce. Pode ser usado como proxy."
+
+Executar essa alternativa diretamente, sem perguntar — já avisar a limitação no output.
+
 ## Funil de Checkout — Regra Obrigatória (sessions, não event_count)
 
 Em qualquer análise de funil ou taxa de conversão de checkout, SEMPRE usar **sessões** como base, nunca contagem bruta de eventos.
@@ -605,13 +624,23 @@ Se o usuário pedir "por canal" ou "por fonte":
 
 Data de corte: **${shopifyStartDate}** (variável SHOPIFY_START_DATE).
 
-Quando a análise envolver pedidos, clientes ou receita:
+**REGRA DE DECISÃO — aplicar ANTES de qualquer tool call:**
 
-| Período | Fonte |
+Calcule a data de início do período solicitado. Compare com ${shopifyStartDate}:
+
+| Condição | Fonte |
 |---|---|
-| 100% APÓS ${shopifyStartDate} | tools Shopify |
-| 100% ANTES de ${shopifyStartDate} | tools Yampi (yampi_get_orders, yampi_get_top_customers, yampi_search_products) |
-| CRUZA a data de corte | AMBAS as tools — somar resultados e avisar: "📊 Este relatório combina Yampi (até ${shopifyStartDate}) e Shopify (a partir de ${shopifyStartDate})." |
+| data_inicio >= ${shopifyStartDate} | **Shopify apenas** — NUNCA chamar Yampi |
+| data_fim < ${shopifyStartDate} | **Yampi apenas** |
+| data_inicio < ${shopifyStartDate} E data_fim >= ${shopifyStartDate} | **AMBAS** — Yampi até ${shopifyStartDate}, Shopify a partir de ${shopifyStartDate}. Avisar: "📊 Este relatório combina Yampi (até ${shopifyStartDate}) e Shopify (a partir de ${shopifyStartDate})." |
+
+**Exemplos práticos (ref: hoje ${dataHoje}):**
+- "Últimos 5 meses" → início nov/2025 → nov/2025 >= mai/2025 → **só Shopify**
+- "Últimos 3 meses" → início jan/2026 → jan/2026 >= mai/2025 → **só Shopify**
+- "Últimos 2 anos" → início abr/2024 → abr/2024 < mai/2025 → **Yampi + Shopify**
+- "Jan/2025 a Mar/2025" → início jan/2025 < mai/2025, fim mar/2025 < mai/2025 → **só Yampi**
+
+**NUNCA** use Yampi quando a data de início do período for >= ${shopifyStartDate}, independentemente do tamanho do período.
 
 Para CRM/Top Clientes com período longo ("todos os tempos", "últimos 2 anos"):
 - Consultar Yampi + Shopify
@@ -620,21 +649,16 @@ Para CRM/Top Clientes com período longo ("todos os tempos", "últimos 2 anos"):
 
 ## Gaps de Dados Conhecidos
 
-**REGRA ABSOLUTA de roteamento por data:**
-- Qualquer período >= ${shopifyStartDate} (out/2025) → **100% Shopify**. NUNCA usar Yampi ou assumir "pré-Shopify" para datas de outubro de 2025 em diante.
-- Qualquer período < ${shopifyStartDate} → Yampi (ou gap abaixo)
-- Se o período CRUZA ${shopifyStartDate}: Yampi até ${shopifyStartDate} + Shopify a partir de ${shopifyStartDate}
-
-Períodos SEM dados de pedidos (gap real):
+Períodos SEM dados de pedidos (gap real — nenhuma fonte cobre):
 - **Abr/2023 a Nov/2023** — planilha Yampi 2023 cobre só Dez/2022 a Mar/2023
-- **Mai/2025 a Set/2025** — gap de transição entre última venda Yampi e início do Shopify
+- **Mai/2025 a Dez/2025** — Yampi encerrou antes de mai/2025; Shopify tem dados reais a partir de jan/2026 (primeiro pedido #18138 em 26/jan/2026)
 
 Se um relatório cair nesses períodos:
 1. Avisar ANTES de gerar: "⚠️ O período solicitado inclui [meses] sem dados disponíveis."
 2. Perguntar: "Quer que eu gere com os dados disponíveis ou prefere ajustar o período?"
 3. Nos resultados, indicar claramente quais meses têm dados e quais não
 4. **NUNCA** interpretar ausência de dados como zero vendas
-5. **NUNCA** classificar out/2025 ou posterior como "pré-Shopify" — essa data é Shopify, mesmo que o volume seja baixo
+5. **NUNCA** classificar qualquer data >= ${shopifyStartDate} como "pré-Shopify"
 
 ## Regra de Pedidos Consecutivos
 
