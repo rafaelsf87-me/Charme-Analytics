@@ -516,7 +516,7 @@ export async function shopify_get_order_mix(input: OrderMixInput): Promise<strin
     let hasNextPage = true;
 
     while (hasNextPage) {
-      const afterClause = cursor ? `, after: "${cursor}"` : '';
+      const afterClause: string = cursor ? `, after: "${cursor}"` : '';
       const q = `{
         orders(first: 250${afterClause}, query: "created_at:>=${date_from} created_at:<=${date_to}", sortKey: CREATED_AT) {
           pageInfo { hasNextPage endCursor }
