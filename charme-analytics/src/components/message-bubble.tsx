@@ -129,14 +129,14 @@ export function MessageBubble({ message, onRequestDetails }: MessageBubbleProps)
           onClick={handleDownload}
           className="text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
         >
-          {downloaded ? '✓ Baixado' : 'Download Resposta'}
+          {downloaded ? '✓ Baixado' : 'Download'}
         </button>
         {onRequestDetails && (
           <button
             onClick={onRequestDetails}
             className="text-xs text-zinc-300 hover:text-zinc-500 transition-colors"
           >
-            Detalhes Técnicos
+            Detalhar
           </button>
         )}
       </div>

@@ -34,7 +34,7 @@ export function DataTable({ children }: { children?: React.ReactNode }) {
 
 export function DataTableHead({ children }: { children?: React.ReactNode }) {
   return (
-    <thead className="bg-zinc-100 text-zinc-700 text-[10px] uppercase tracking-wide">
+    <thead className="bg-zinc-100 text-zinc-700 text-xs uppercase tracking-wide">
       {children}
     </thead>
   );
@@ -70,7 +70,7 @@ export function DataTableCell({ children }: { children?: React.ReactNode }) {
   const numeric = isNumeric(children);
   return (
     <td
-      className={`px-2 py-1.5 text-[11px] text-zinc-700 whitespace-nowrap ${
+      className={`px-2 py-1.5 text-[13px] text-zinc-700 whitespace-nowrap ${
         numeric ? 'text-right tabular-nums' : 'text-left'
       }`}
     >
