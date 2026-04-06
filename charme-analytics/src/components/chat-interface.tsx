@@ -270,7 +270,17 @@ export function ChatInterface() {
           )}
 
           {messages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} />
+            <MessageBubble
+              key={i}
+              message={msg}
+              onRequestDetails={
+                msg.role === 'assistant'
+                  ? () => sendMessage(
+                      '[DETALHES TÉCNICOS] Detalhe tecnicamente a resposta anterior: quais tools foram chamadas, com quais parâmetros exatos (datas, filtros, limites), o que cada tool retornou (totais, número de linhas, erros se houver), e como você construiu a resposta final com esses dados. Se nenhuma tool foi usada, explique como chegou à resposta.'
+                    )
+                  : undefined
+              }
+            />
           ))}
 
           {loading && <LoadingIndicator platforms={platforms} phase={loadingPhase} />}

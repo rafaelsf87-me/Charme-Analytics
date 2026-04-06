@@ -15,16 +15,68 @@ import type { Message } from '@/lib/types';
 
 interface MessageBubbleProps {
   message: Message;
+  onRequestDetails?: () => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRequestDetails }: MessageBubbleProps) {
   const isUser = message.role === 'user';
-  const [copied, setCopied] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
-  async function handleCopy() {
-    await navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  function handleDownload() {
+    const now = new Date();
+    const timestamp = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const filename = `charme-analytics-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.html`;
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Charme Analytics — ${timestamp}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 860px; margin: 40px auto; padding: 0 24px; color: #1a1a1a; line-height: 1.6; }
+    header { border-bottom: 2px solid #5b3f8c; padding-bottom: 12px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: center; }
+    header h1 { font-size: 16px; color: #5b3f8c; margin: 0; font-weight: 600; }
+    header span { font-size: 12px; color: #888; }
+    h1, h2, h3 { color: #1a1a1a; margin-top: 24px; }
+    h2 { font-size: 16px; border-bottom: 1px solid #e5e5e5; padding-bottom: 4px; }
+    h3 { font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+    th { background: #5b3f8c; color: white; padding: 8px 12px; text-align: left; font-weight: 600; }
+    td { padding: 7px 12px; border-bottom: 1px solid #e5e5e5; }
+    tr:nth-child(even) td { background: #f9f7fc; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: monospace; }
+    pre { background: #f4f4f4; padding: 12px 16px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+    strong { font-weight: 600; }
+    ul, ol { padding-left: 20px; }
+    li { margin: 4px 0; }
+    p { margin: 8px 0; }
+    hr { border: none; border-top: 1px solid #e5e5e5; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Charme Analytics</h1>
+    <span>${timestamp}</span>
+  </header>
+  <div id="content"></div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    document.getElementById('content').innerHTML = marked.parse(${JSON.stringify(message.content)});
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    setDownloaded(true);
+    setTimeout(() => setDownloaded(false), 2000);
   }
 
   if (isUser) {
@@ -72,12 +124,22 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {message.content}
         </ReactMarkdown>
       </div>
-      <button
-        onClick={handleCopy}
-        className="self-start text-sm text-zinc-400 hover:text-zinc-600 transition-colors mt-1"
-      >
-        {copied ? '✓ Copiado' : 'Copiar'}
-      </button>
+      <div className="flex items-center justify-between mt-1">
+        <button
+          onClick={handleDownload}
+          className="text-sm text-zinc-400 hover:text-zinc-600 transition-colors"
+        >
+          {downloaded ? '✓ Baixado' : 'Download Resposta'}
+        </button>
+        {onRequestDetails && (
+          <button
+            onClick={onRequestDetails}
+            className="text-xs text-zinc-300 hover:text-zinc-500 transition-colors"
+          >
+            Detalhes Técnicos
+          </button>
+        )}
+      </div>
     </div>
   );
 }
