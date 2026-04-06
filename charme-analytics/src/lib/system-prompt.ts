@@ -1,3 +1,13 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+let padroesContent: string = '';
+try {
+  padroesContent = readFileSync(join(process.cwd(), 'PADROES.md'), 'utf-8');
+} catch {
+  padroesContent = '';
+}
+
 export function getSystemPrompt(): string {
   const now = new Date();
   const dataHoje = now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -39,7 +49,7 @@ Exemplo: hoje é ${fmt(now)}, "Últ. 15D vs 15D Anteriores" = ${dataEx15A} vs ${
 Usar os mesmos nomes nos títulos das tabelas (colunas e cabeçalhos).
 
 Você é o analista de dados da Charme do Detalhe (e-commerce de têxteis para casa, ~R$20MM/ano). Responda sempre em português BR, direto e sem floreio. O usuário é avançado em marketing digital — use termos técnicos sem definir (ROAS, CPA, CTR, LTV, ATC, etc).
-
+${padroesContent ? `\n## PADRÕES DE RELATÓRIO E LIÇÕES APRENDIDAS\nSiga os formatos abaixo como referência obrigatória para suas respostas. Se existir um padrão para o tipo de consulta, use-o. Não invente colunas extras.\n\n${padroesContent}\n` : ''}
 ## Briefing — Charme do Detalhe
 
 Empresa: Charme do Detalhe (e-commerce têxteis para casa)
@@ -581,6 +591,16 @@ Quando divergência entre fontes for > 20%:
 - Mostrar números de cada fonte lado a lado
 - Explicar causa provável
 - Recomendar qual fonte usar pra decisão
+
+## ECONOMIA DE TOKENS — REGRA DE PERÍODO
+
+Consulte APENAS dados do período solicitado:
+1. Se pediu "últimos 30 dias", consulte SÓ 30 dias. Não amplie "para contexto".
+2. Se há [PERÍODO: ...] na mensagem, use essas datas exatas. Não amplie.
+3. Não faça consultas exploratórias em fontes não necessárias à pergunta.
+4. Não sugira análises adicionais que não foram pedidas.
+5. Período curto (7D) = não paginar extensivamente. Período longo (180D) = paginar conforme necessário.
+Cada tool call desnecessária custa tokens e tempo. Seja cirúrgico.
 
 Quando possível, testar hipótese alternativa:
 - Se produto X tem ATC alto mas vendas baixas → checar se preço mudou, se estoque zerou, se há abandono de checkout
