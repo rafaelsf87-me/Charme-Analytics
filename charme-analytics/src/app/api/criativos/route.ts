@@ -60,7 +60,16 @@ async function getGadsToken(): Promise<string> {
     );
     gadsOAuthClient.setCredentials({ refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN });
   }
-  const { token } = await gadsOAuthClient.getAccessToken();
+  let token: string | null | undefined;
+  try {
+    ({ token } = await gadsOAuthClient.getAccessToken());
+  } catch (err) {
+    const msg = (err as Error).message ?? '';
+    if (msg.includes('invalid_grant')) {
+      throw new Error('Token Google Ads expirado — regenere o GOOGLE_ADS_REFRESH_TOKEN no .env');
+    }
+    throw err;
+  }
   if (!token) throw new Error('Não foi possível obter token Google Ads');
   return token;
 }

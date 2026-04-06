@@ -25,7 +25,16 @@ function getOAuth2Client(): OAuth2Client {
 
 async function getAccessToken(): Promise<string> {
   const client = getOAuth2Client();
-  const { token } = await client.getAccessToken();
+  let token: string | null | undefined;
+  try {
+    ({ token } = await client.getAccessToken());
+  } catch (err) {
+    const msg = (err as Error).message ?? '';
+    if (msg.includes('invalid_grant')) {
+      throw new Error('Token Google Ads expirado — regenere o GOOGLE_ADS_REFRESH_TOKEN no .env');
+    }
+    throw err;
+  }
   if (!token) throw new Error('Não foi possível obter token Google Ads');
   return token;
 }
