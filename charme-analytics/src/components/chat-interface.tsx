@@ -510,7 +510,20 @@ export function ChatInterface() {
                   <p className="text-xs text-zinc-500 mb-1.5 font-medium">Período B</p>
                   <div className="flex flex-wrap gap-1 mb-2">
                     {PRESETS.filter(k => k !== 'Total').map((key) => {
-                      const { from, to } = presetDates(key);
+                      const PRESET_DAYS: Record<string, number> = { '7D': 7, '30D': 30, '60D': 60, '90D': 90, '180D': 180 };
+                      // Quando A está preenchido, B usa período imediatamente anterior a A (não os últimos N dias)
+                      const relativeDates = (): { from: string; to: string } => {
+                        if (periodA.from) {
+                          const days = PRESET_DAYS[key]!;
+                          const bTo = new Date(periodA.from);
+                          bTo.setDate(bTo.getDate() - 1);
+                          const bFrom = new Date(bTo);
+                          bFrom.setDate(bFrom.getDate() - (days - 1));
+                          return { from: toYMD(bFrom), to: toYMD(bTo) };
+                        }
+                        return presetDates(key);
+                      };
+                      const { from, to } = relativeDates();
                       const active = periodB.from === from && periodB.to === to;
                       return (
                         <button
