@@ -1,19 +1,48 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from '@/components/message-bubble';
 import { LoadingIndicator, type PlatformStatus } from '@/components/loading-indicator';
 import { PROGRESS_PREFIX } from '@/lib/stream-protocol';
 import type { Message } from '@/lib/types';
 
-const SUGGESTIONS = [
-  { icon: '🛋️', text: 'Quais Top 10 Capas Sofás com Melhores e Piores ATC nos últimos 30D.' },
-  { icon: '📉', text: 'Nos últimos 15D, qual categoria mais caiu em vendas vs período anterior?' },
-  { icon: '🔥', text: 'Quais SKUs queimam tráfego nos últimos 7D?' },
-  { icon: '💰', text: 'Qual SKU gerou mais receita nos últimos 7D?' },
-  { icon: '📊', text: 'Qual o ROAS Google vs. Meta nos últimos 30D?' },
-  { icon: '🚨', text: 'Qual campanha consumiu mais verba sem retorno nos últimos 30D?' },
+const SUGGESTIONS: { icon: string; text: string; label: React.ReactNode }[] = [
+  {
+    icon: '🛋️',
+    text: 'Quais Top 10 Capas Sofás com Melhores e Piores ATCs nos últimos 30D.',
+    label: <>Quais Top 10 Capas Sofás com Melhores e <strong>Piores ATCs</strong> nos últimos 30D.</>,
+  },
+  {
+    icon: '📉',
+    text: 'Funil PDP até Checkout, últimos 30D — Qual Top 5 Produtos tiveram pior e top 5 melhor desempenho?',
+    label: <><strong>Funil PDP até Checkout</strong>, últimos 30D — Qual Top 5 Produtos tiveram pior e top 5 melhor desempenho?</>,
+  },
+  {
+    icon: '📉',
+    text: 'Nos últimos 30D (vs. 30D anteriores), Qual Top 5 Produtos com Maiores Quedas em vendas?',
+    label: <>Nos últimos 30D (vs. 30D anteriores), Qual Top 5 <strong>Produtos Maiores Quedas</strong> em vendas?</>,
+  },
+  {
+    icon: '💸',
+    text: 'Nos últimos 14D, quais Campanhas Gastaram +R$500 com ROAS abaixo de 2?',
+    label: <>Nos últimos 14D, quais <strong>Campanhas Gastaram</strong> +R$500 com ROAS abaixo de 2?</>,
+  },
+  {
+    icon: '📊',
+    text: 'ROAS Google vs Meta nos últimos 30D — qual canal está mais eficiente?',
+    label: <><strong>ROAS Google vs Meta</strong> nos últimos 30D — qual canal está mais eficiente?</>,
+  },
+  {
+    icon: '📊',
+    text: 'Mix de Categorias últimos 30D: % faturamento e variação vs mês anterior.',
+    label: <>Mix de Categorias últimos 30D: % <strong>faturamento e variação</strong> vs mês anterior.</>,
+  },
+  {
+    icon: '💰',
+    text: 'Ticket Médio por categoria 30D vs anterior: maior alta e maior queda.',
+    label: <><strong>Ticket Médio</strong> por categoria 30D vs anterior: maior alta e maior queda.</>,
+  },
 ];
 
 const PREFIX = PROGRESS_PREFIX;
@@ -301,7 +330,7 @@ export function ChatInterface() {
                     className="text-left text-base p-3 rounded-xl border border-charme-border bg-white hover:bg-charme-card hover:border-charme/30 transition-colors text-charme-text leading-snug"
                   >
                     <span className="mr-1.5">{s.icon}</span>
-                    {s.text}
+                    {s.label}
                   </button>
                 ))}
               </div>
