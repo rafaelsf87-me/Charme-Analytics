@@ -22,7 +22,11 @@ Ao gerar uma resposta com tabela, verifique se existe um padrão aqui para o tip
 | Produto | Views | ATC | ATC (%) | Checkout | Checkout (%) | Receita (GA4 — est.) |
 |---|---|---|---|---|---|---|
 
-- **Ordenação padrão:** Receita (desc) — sempre, mesmo quando a análise é de ATC ou checkout
+- **Ordenação:** pelo critério explicitado na pergunta (a tool já retorna na ordem certa — não reordenar)
+  - ATC / "melhores/piores ATC" → desc por ATC (%) — maior primeiro (melhores) ou menor primeiro (piores)
+  - Checkout → desc por Checkout (%)
+  - Views → desc por Views
+  - Receita / sem critério → desc por Receita
 - ATC = contagem bruta de cliques no carrinho (corrigido ÷5 para cadeiras)
 - ATC (%) = ATC ÷ Views × 100
 - Checkout = número de compras (itemsPurchased)
@@ -39,7 +43,7 @@ Ao gerar uma resposta com tabela, verifique se existe um padrão aqui para o tip
 - Não buscar vendas no Shopify quando a pergunta é sobre ATC/Views
 - Não apresentar "quantidade vendida" quando o pedido é sobre comportamento
 - Não ignorar threshold solicitado pelo usuário
-- Não ordenar por views ou por taxa — ordenação final SEMPRE por receita
+- Não reordenar manualmente a tabela — respeitar a ordem que a tool retornou
 
 ---
 

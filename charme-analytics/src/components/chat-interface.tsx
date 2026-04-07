@@ -105,8 +105,11 @@ export function ChatInterface() {
 
   // Comparar períodos
   const [comparing, setComparing] = useState(false);
+  const [periodsExpanded, setPeriodsExpanded] = useState(false);
   const [periodA, setPeriodA] = useState<ComparePeriod>({ from: '', to: '' });
   const [periodB, setPeriodB] = useState<ComparePeriod>({ from: '', to: '' });
+
+  const bothPeriodsSet = !!(periodA.from && periodA.to && periodB.from && periodB.to);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -234,11 +237,47 @@ export function ChatInterface() {
     setPreset((prev) => (prev === key ? null : key));
   }
 
+  // Auto-collapse quando ambos os períodos estão preenchidos
+  // Só dispara quando as datas mudam (não quando periodsExpanded muda) — evita colapso ao abrir para editar
+  useEffect(() => {
+    if (!periodsExpanded) return;
+    if (bothPeriodsSet) {
+      const t = setTimeout(() => setPeriodsExpanded(false), 350);
+      return () => clearTimeout(t);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodA, periodB]);
+
   function toggleComparing() {
     setComparing((v) => {
-      if (!v) { setPreset(null); }
+      if (!v) {
+        setPreset(null);
+        setPeriodsExpanded(true);
+      } else {
+        setPeriodsExpanded(false);
+        setPeriodA({ from: '', to: '' });
+        setPeriodB({ from: '', to: '' });
+      }
       return !v;
     });
+  }
+
+  function handleComparingClick() {
+    if (comparing && bothPeriodsSet && !periodsExpanded) {
+      // Períodos já definidos e painel recolhido → abrir para editar
+      setPeriodsExpanded(true);
+    } else {
+      toggleComparing();
+    }
+  }
+
+  function formatPeriodShort(p: ComparePeriod): string {
+    const months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    const fmt = (d: string) => {
+      const [y, m, day] = d.split('-');
+      return `${parseInt(day)}/${months[parseInt(m) - 1]}'${y.slice(2)}`;
+    };
+    return `${fmt(p.from)} → ${fmt(p.to)}`;
   }
 
   const PRESETS: PresetKey[] = ['7D', '30D', '60D', '90D', '180D', 'Total'];
@@ -384,17 +423,42 @@ export function ChatInterface() {
           {/* Toggle comparar períodos — só visível antes da primeira mensagem */}
           {messages.length === 0 &&
           <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2 cursor-pointer w-fit">
-              <input
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Checkbox customizado para interceptar clique quando recolhido */}
+              <label
+                className="flex items-center gap-2 cursor-pointer w-fit"
+                onClick={(e) => { e.preventDefault(); handleComparingClick(); }}
+              >
+                <input
                   type="checkbox"
                   checked={comparing}
-                  onChange={toggleComparing}
+                  onChange={() => {}}
+                  readOnly
                   className="accent-charme w-3.5 h-3.5"
                 />
-              <span className="text-xs text-zinc-400">Comparar períodos</span>
-            </label>
+                <span className="text-xs text-zinc-400">Comparar períodos</span>
+              </label>
 
-            {comparing && (
+              {/* Badge compacto com os períodos selecionados — clicável para editar */}
+              {comparing && !periodsExpanded && bothPeriodsSet && (
+                <button
+                  onClick={() => setPeriodsExpanded(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-charme/40 bg-charme/8 text-charme text-xs hover:bg-charme/15 transition-colors group"
+                >
+                  <span className="font-medium">A:</span>
+                  <span>{formatPeriodShort(periodA)}</span>
+                  <span className="text-charme/40 mx-0.5">vs</span>
+                  <span className="font-medium">B:</span>
+                  <span>{formatPeriodShort(periodB)}</span>
+                  <svg className="w-3 h-3 ml-1 text-charme/50 group-hover:text-charme transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Painel expandido de seleção */}
+            {comparing && (periodsExpanded || !bothPeriodsSet) && (
               <div className="flex flex-col sm:flex-row gap-3 p-3 rounded-xl border border-charme-border bg-charme-bg">
                 {/* Período A */}
                 <div className="flex-1">

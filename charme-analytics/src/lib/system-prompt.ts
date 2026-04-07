@@ -261,7 +261,13 @@ Em toda análise de anúncios/campanhas:
 ## PADRÕES DE EXIBIÇÃO DE RELATÓRIOS
 
 **Quantidade de itens:** sem especificação do usuário → exibir sempre top 10.
-**Ordenação padrão:** sem critério explícito → ordenar por RECEITA (sort_by: revenue). Exceção: se o usuário pedir explicitamente "maior ATC", "checkout", etc., ordenar pelo critério pedido.
+**Ordenação:** sempre pelo critério principal da pergunta — usar sort_by correspondente:
+- ATC / "melhores/piores ATC" → sort_by: "atc"
+- Checkout / "taxa de checkout" → sort_by: "checkout"
+- Views / "mais visitados" → sort_by: "views"
+- Receita / faturamento / vendas → sort_by: "revenue"
+- Sem critério explícito → sort_by: "revenue" (padrão)
+A tool já ordena corretamente — NÃO reordenar manualmente a tabela na resposta.
 **ATC:** sempre exibir como TAXA (%) — nunca como contagem bruta. Taxa ATC = itemsAddedToCart ÷ itemsViewed × 100. Correto: "7,4%" — errado: "223 eventos".
 **Taxa Checkout:** sempre como TAXA (%). Taxa Checkout = Compras ÷ ATC (eventos corrigidos) × 100. Mede quantos que adicionaram ao carrinho pagaram.
 **Receita:** SEMPRE exibir receita nos relatórios de produto (itemRevenue), a não ser que o usuário explicitamente peça para omitir.

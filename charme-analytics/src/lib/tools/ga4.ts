@@ -524,14 +524,10 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
     // ── Montagem do output ───────────────────────────────────────────────────
     let output = '';
 
-    // Re-ordenar por receita (desc) para apresentação — identifica impacto financeiro
-    const sortByRevenue = <T extends { revenue: number }>(items: T[]): T[] =>
-      [...items].sort((a, b) => b.revenue - a.revenue);
-
     if (isBoth) {
       // TOP N Melhores + TOP N Piores (sorted desc, piores = last N)
-      const best  = sortByRevenue(processed.slice(0, safeLimit));
-      const worst = sortByRevenue(processed.slice(-safeLimit).reverse()); // pior primeiro
+      const best  = processed.slice(0, safeLimit);
+      const worst = processed.slice(-safeLimit).reverse(); // pior primeiro
 
       const bestTable  = compactTable(usedHeaders, best.map(toRow));
       const worstTable = compactTable(usedHeaders, worst.map(toRow));
@@ -544,7 +540,7 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
         `💔 **TOP ${safeLimit} PIORES** — ${sortLabel[sort_by] ?? sort_by}\n` +
         `${worstTable}`;
     } else {
-      const display   = sortByRevenue(processed.slice(0, safeLimit));
+      const display   = processed.slice(0, safeLimit);
       const rankLabel = ranking_mode === 'worst' ? 'Piores' : 'Top';
       const mainTable = compactTable(usedHeaders, display.map(toRow));
 
