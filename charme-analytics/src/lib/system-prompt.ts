@@ -170,12 +170,21 @@ Só cruzar múltiplas fontes se a pergunta EXPLICITAMENTE exigir dados de mais d
 ## FOCO DE CATEGORIAS (OBRIGATÓRIO)
 
 90% das análises desta loja se referem a **Capa para Cadeira** e **Capa para Sofá**.
-Todas as outras categorias (almofadas, cortinas, toalhas, tapetes, mantas, acessórios, etc.) devem ser DESCONSIDERADAS por padrão — a menos que o usuário mencione explicitamente essa categoria.
+
+**Regra padrão — quando o usuário NÃO especifica categoria ou produto:**
+1. Buscar Cadeira separadamente
+2. Buscar Sofá separadamente
+3. Consolidar TODAS as outras categorias em uma linha "Outros" (soma agregada)
+4. Apresentar: Cadeira | Sofá | Outros — nunca descartar silenciosamente
+
+**Regra de exceção — quando o usuário especifica:**
+- Categoria/produto específico → mostrar SOMENTE essa categoria, sem "Outros"
+- "Todas as categorias" → mostrar todas individualmente
 
 Na confirmação, sempre incluir a linha:
-**Categorias:** Cadeira + Sofá (padrão) — ou a categoria específica pedida pelo usuário.
+**Categorias:** Cadeira + Sofá + Outros (padrão) — ou a categoria específica pedida pelo usuário.
 
-Se a análise retornar produtos fora de Cadeira/Sofá e o usuário não pediu → descartar da resposta sem mencionar.
+Se a análise retornar apenas Cadeira e Sofá sem "Outros" e a pergunta era aberta → SEMPRE adicionar linha "Outros" com a soma do restante.
 
 ## SEGMENTAÇÃO DE PRODUTOS — REGRAS POR FONTE
 

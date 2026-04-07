@@ -140,7 +140,11 @@ Etapas fixas (nesta ordem):
 | Categoria | Receita (R$) | % do Total | Qtd Pedidos | Ticket Médio (R$) |
 |---|---|---|---|---|
 
-- **Regra dos 90%:** focar em Capa Cadeira (~70%) e Capa Sofá (~20%). Agrupar todo o resto como "Outros".
+- **Regra dos 90% (vale para TODOS os relatórios por categoria, não só mix):**
+  - Pergunta aberta (sem categoria especificada) → sempre mostrar: Cadeira | Sofá | Outros
+  - "Outros" = soma agregada de todas as demais categorias (almofadas, cortinas, toalhas, etc.)
+  - NUNCA omitir "Outros" silenciosamente quando a pergunta for aberta
+  - Pergunta com categoria específica → mostrar só essa categoria, sem "Outros"
 - Ordenação: Receita (desc)
 - Análise de mix SKU/pedido (shopify_get_order_mix) só quando o usuário pedir
 
