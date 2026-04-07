@@ -10,25 +10,21 @@ interface ProdutoCardProps {
 }
 
 function humanizeHandle(handle: string): string {
-  return handle
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
+  return handle.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function fmtPct(n: number): string {
   return `${n.toFixed(1)}%`;
 }
 
-// Cores e estilos por tipo de problema
 function barColor(tipo: TipoProblema): string {
-  if (tipo === 'logistica') return '#a1a1aa'; // zinc-400
-  if (tipo === 'outro') return '#d4d4d8';     // zinc-300
-  return '#553679';                            // charme
+  if (tipo === 'logistica') return '#a1a1aa';
+  if (tipo === 'outro') return '#d4d4d8';
+  return '#553679';
 }
 
 function labelClass(tipo: TipoProblema): string {
-  if (tipo === 'logistica') return 'text-zinc-400';
-  if (tipo === 'outro') return 'text-zinc-300';
+  if (tipo === 'logistica' || tipo === 'outro') return 'text-zinc-400';
   return 'text-zinc-700 font-medium';
 }
 
@@ -37,23 +33,63 @@ function valueClass(tipo: TipoProblema): string {
   return 'text-zinc-500';
 }
 
+// ─── Tooltip "i" ───────────────────────────────────────────────────────────────
+
+function InfoTooltip({ textos }: { textos: string[] }) {
+  if (textos.length === 0) return null;
+  return (
+    <div className="relative group/tip inline-flex items-center shrink-0 ml-1.5">
+      {/* Ícone */}
+      <div className="w-4 h-4 rounded-full bg-zinc-100 border border-zinc-200 text-zinc-400 text-[9px] font-bold flex items-center justify-center cursor-help select-none hover:bg-zinc-200 transition-colors">
+        i
+      </div>
+
+      {/* Tooltip — aparece acima do ícone */}
+      <div className="
+        absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2
+        hidden group-hover/tip:block
+        w-80 bg-zinc-900 text-zinc-100 text-[11px] leading-relaxed
+        rounded-xl shadow-2xl
+        pointer-events-none
+      ">
+        {/* Conteúdo */}
+        <div className="p-3 max-h-56 overflow-y-auto space-y-2">
+          {textos.map((t, i) => (
+            <p
+              key={i}
+              className="border-b border-zinc-700/60 pb-2 last:border-0 last:pb-0"
+            >
+              &ldquo;{t}&rdquo;
+            </p>
+          ))}
+        </div>
+
+        {/* Seta */}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-zinc-900" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Card ──────────────────────────────────────────────────────────────────────
+
 export function ProdutoCard({ produto, imagem }: ProdutoCardProps) {
   const titulo = imagem?.title && imagem.title !== imagem.handle
     ? imagem.title
     : humanizeHandle(produto.product_handle);
 
-  // Barra proporcional apenas em relação ao maior problema de produto
   const maxQtdProduto = produto.problemas
     .filter(p => p.tipo === 'produto')
     .reduce((m, p) => Math.max(m, p.quantidade), 1);
 
-  const temProblemas = produto.problemas.length > 0 || produto.outros > 0;
+  const temConteudo = produto.problemas.length > 0 || produto.outros > 0;
 
   return (
-    <div className="bg-white border border-charme-border rounded-xl shadow-sm overflow-hidden">
+    // overflow-visible necessário para o tooltip não ser cortado pelo card
+    <div className="bg-white border border-charme-border rounded-xl shadow-sm">
+
       {/* Header */}
       <div className="flex items-start gap-4 p-5 border-b border-zinc-100">
-        {/* Thumbnail */}
         <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-zinc-100 flex items-center justify-center">
           {imagem?.imageUrl ? (
             <Image
@@ -68,7 +104,6 @@ export function ProdutoCard({ produto, imagem }: ProdutoCardProps) {
           )}
         </div>
 
-        {/* Título + métricas */}
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-charme-text leading-snug line-clamp-2">
             {titulo}
@@ -92,7 +127,7 @@ export function ProdutoCard({ produto, imagem }: ProdutoCardProps) {
 
       {/* Problemas */}
       <div className="p-5">
-        {!temProblemas ? (
+        {!temConteudo ? (
           <p className="text-xs text-zinc-400 italic">
             Nenhum problema recorrente encontrado (mínimo 2 ocorrências).
           </p>
@@ -102,26 +137,28 @@ export function ProdutoCard({ produto, imagem }: ProdutoCardProps) {
               Principais Problemas
             </p>
             <div className="space-y-2.5">
+
               {produto.problemas.map(prob => {
-                // Barra: problemas de produto são proporcionais ao maior de produto
-                // Logística/outro: barra proporcional ao total de negativas
                 const barBase = prob.tipo === 'produto' ? maxQtdProduto : produto.total_negativas;
                 const baraPct = barBase > 0 ? (prob.quantidade / barBase) * 100 : 0;
 
                 return (
                   <div key={prob.categoria}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex items-center justify-between mb-1 gap-2">
+                      {/* Label + badge logística + ícone i */}
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {prob.tipo === 'logistica' && (
-                          <span className="text-[10px] text-zinc-400 border border-zinc-200 rounded px-1 shrink-0">
+                          <span className="text-[9px] text-zinc-400 border border-zinc-200 rounded px-1 shrink-0">
                             logística
                           </span>
                         )}
                         <span className={`text-xs truncate ${labelClass(prob.tipo)}`}>
                           {prob.categoria}
                         </span>
+                        <InfoTooltip textos={prob.textos} />
                       </div>
-                      <span className={`text-xs tabular-nums shrink-0 ml-2 ${valueClass(prob.tipo)}`}>
+                      {/* Contagem */}
+                      <span className={`text-xs tabular-nums shrink-0 ${valueClass(prob.tipo)}`}>
                         {prob.quantidade}{' '}
                         <span className="text-zinc-400">({fmtPct(prob.percentual)})</span>
                       </span>
@@ -129,22 +166,22 @@ export function ProdutoCard({ produto, imagem }: ProdutoCardProps) {
                     <div className="w-full bg-zinc-100 rounded-full h-1.5">
                       <div
                         className="h-1.5 rounded-full transition-all"
-                        style={{
-                          width: `${baraPct}%`,
-                          backgroundColor: barColor(prob.tipo),
-                        }}
+                        style={{ width: `${baraPct}%`, backgroundColor: barColor(prob.tipo) }}
                       />
                     </div>
                   </div>
                 );
               })}
 
-              {/* Linha "Outros não identificados" — sempre em cinza claro */}
+              {/* Outros não identificados */}
               {produto.outros > 0 && (
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-zinc-400 italic">Outros não identificados</span>
-                    <span className="text-xs text-zinc-400 tabular-nums ml-2">
+                  <div className="flex items-center justify-between mb-1 gap-2">
+                    <div className="flex items-center min-w-0 flex-1">
+                      <span className="text-xs text-zinc-400 italic">Outros não identificados</span>
+                      <InfoTooltip textos={produto.textos_outros} />
+                    </div>
+                    <span className="text-xs text-zinc-400 tabular-nums shrink-0">
                       {produto.outros}{' '}
                       <span className="text-zinc-300">
                         ({fmtPct((produto.outros / produto.total_negativas) * 100)})
@@ -162,6 +199,7 @@ export function ProdutoCard({ produto, imagem }: ProdutoCardProps) {
                   </div>
                 </div>
               )}
+
             </div>
           </>
         )}

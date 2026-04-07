@@ -12,7 +12,6 @@ import type { ProdutoImagem } from '@/app/api/avaliacoes/imagens/route';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type Ordenacao = 'negativas' | 'nota' | 'total';
 type Mode = 'upload' | 'processing' | 'results';
 
 // ─── Export ────────────────────────────────────────────────────────────────────
@@ -65,7 +64,6 @@ export function AvaliacoesView() {
   const [produtos, setProdutos] = useState<ProdutoResultado[]>([]);
   const [imagens, setImagens] = useState<Map<string, ProdutoImagem>>(new Map());
   const [errosApi, setErrosApi] = useState<string[]>([]);
-  const [ordenacao, setOrdenacao] = useState<Ordenacao>('negativas');
   const [busca, setBusca] = useState('');
 
   async function handleConfirm(data: ParsedData) {
@@ -139,28 +137,18 @@ export function AvaliacoesView() {
     setImagens(new Map());
     setErrosApi([]);
     setBusca('');
-    setOrdenacao('negativas');
   }
 
-  // Filtrar + ordenar
+  // Filtrar (ordenação fixa: mais negativas primeiro — já vem do backend)
   const produtosFiltrados = useMemo(() => {
-    let lista = [...produtos];
-
-    if (busca.trim()) {
-      const q = busca.toLowerCase();
-      lista = lista.filter(p => {
-        const img = imagens.get(p.product_handle);
-        const nome = img?.title ?? p.product_handle;
-        return nome.toLowerCase().includes(q) || p.product_handle.toLowerCase().includes(q);
-      });
-    }
-
-    if (ordenacao === 'negativas') lista.sort((a, b) => b.total_negativas - a.total_negativas);
-    else if (ordenacao === 'nota') lista.sort((a, b) => a.nota_media - b.nota_media);
-    else if (ordenacao === 'total') lista.sort((a, b) => b.total_reviews - a.total_reviews);
-
-    return lista;
-  }, [produtos, imagens, busca, ordenacao]);
+    if (!busca.trim()) return produtos;
+    const q = busca.toLowerCase();
+    return produtos.filter(p => {
+      const img = imagens.get(p.product_handle);
+      const nome = img?.title ?? p.product_handle;
+      return nome.toLowerCase().includes(q) || p.product_handle.toLowerCase().includes(q);
+    });
+  }, [produtos, imagens, busca]);
 
   // ── Header compartilhado ──────────────────────────────────────────────────
 
@@ -244,26 +232,15 @@ export function AvaliacoesView() {
             <>
               {/* Barra de controles */}
               <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between mb-5">
-                <div className="flex flex-col sm:flex-row gap-2 flex-1">
+                <div className="flex flex-1">
                   {/* Busca */}
                   <input
                     type="text"
                     placeholder="Buscar produto..."
                     value={busca}
                     onChange={e => setBusca(e.target.value)}
-                    className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:border-charme/40 w-full sm:w-56"
+                    className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:border-charme/40 w-full sm:w-64"
                   />
-
-                  {/* Ordenação */}
-                  <select
-                    value={ordenacao}
-                    onChange={e => setOrdenacao(e.target.value as Ordenacao)}
-                    className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:border-charme/40"
-                  >
-                    <option value="negativas">Mais reclamações</option>
-                    <option value="nota">Pior nota média</option>
-                    <option value="total">Mais avaliações</option>
-                  </select>
                 </div>
 
                 {/* Export + resumo */}

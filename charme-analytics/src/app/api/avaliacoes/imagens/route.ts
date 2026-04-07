@@ -7,81 +7,44 @@ export interface ProdutoImagem {
   imageAlt: string | null;
 }
 
-interface ShopifyProduct {
+interface ShopifyProductREST {
   handle: string;
   title: string;
-  featuredImage: { url: string; altText: string | null } | null;
+  image?: { src: string; alt?: string } | null;
 }
 
-interface ShopifyEdge {
-  node: ShopifyProduct;
-}
+const CONCURRENT = 8; // requisições paralelas simultâneas
 
-interface ShopifyResponse {
-  data?: {
-    products: {
-      edges: ShopifyEdge[];
-    };
-  };
-  errors?: { message: string }[];
-}
-
-const BATCH_SIZE = 50;
-
-async function fetchImagesBatch(handles: string[]): Promise<ProdutoImagem[]> {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  const token = process.env.SHOPIFY_ACCESS_TOKEN;
-
-  if (!domain || !token) {
-    return handles.map(h => ({ handle: h, title: h, imageUrl: null, imageAlt: null }));
-  }
-
-  const queryStr = handles.map(h => `handle:${h}`).join(' OR ');
-  const query = `{
-    products(first: ${BATCH_SIZE}, query: "${queryStr}") {
-      edges {
-        node {
-          handle
-          title
-          featuredImage {
-            url
-            altText
-          }
-        }
+async function fetchOne(domain: string, token: string, handle: string): Promise<ProdutoImagem> {
+  try {
+    const res = await fetch(
+      `https://${domain}/admin/api/2024-10/products.json?handle=${encodeURIComponent(handle)}&fields=handle,title,image`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': token,
+          'Content-Type': 'application/json',
+        },
       }
+    );
+
+    if (!res.ok) {
+      return { handle, title: handle, imageUrl: null, imageAlt: null };
     }
-  }`;
 
-  const res = await fetch(`https://${domain}/admin/api/2024-10/graphql.json`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': token,
-    },
-    body: JSON.stringify({ query }),
-  });
+    const data: { products: ShopifyProductREST[] } = await res.json();
+    const p = data.products?.[0];
 
-  if (!res.ok) {
-    return handles.map(h => ({ handle: h, title: h, imageUrl: null, imageAlt: null }));
-  }
+    if (!p) return { handle, title: handle, imageUrl: null, imageAlt: null };
 
-  const data: ShopifyResponse = await res.json();
-  const edges = data.data?.products?.edges ?? [];
-
-  const found = new Map<string, ProdutoImagem>();
-  for (const edge of edges) {
-    const p = edge.node;
-    found.set(p.handle, {
+    return {
       handle: p.handle,
       title: p.title,
-      imageUrl: p.featuredImage?.url ?? null,
-      imageAlt: p.featuredImage?.altText ?? null,
-    });
+      imageUrl: p.image?.src ?? null,
+      imageAlt: p.image?.alt ?? null,
+    };
+  } catch {
+    return { handle, title: handle, imageUrl: null, imageAlt: null };
   }
-
-  return handles.map(h =>
-    found.get(h) ?? { handle: h, title: h, imageUrl: null, imageAlt: null }
-  );
 }
 
 export async function POST(request: NextRequest) {
@@ -99,16 +62,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ imagens: [] });
   }
 
+  const domain = process.env.SHOPIFY_STORE_DOMAIN;
+  const token = process.env.SHOPIFY_ACCESS_TOKEN;
+
+  // Sem credenciais → retornar placeholders
+  if (!domain || !token) {
+    return NextResponse.json({
+      imagens: handles.map(h => ({ handle: h, title: h, imageUrl: null, imageAlt: null })),
+    });
+  }
+
   const resultados: ProdutoImagem[] = [];
 
-  for (let i = 0; i < handles.length; i += BATCH_SIZE) {
-    const batch = handles.slice(i, i + BATCH_SIZE);
-    try {
-      const imgs = await fetchImagesBatch(batch);
-      resultados.push(...imgs);
-    } catch {
-      resultados.push(...batch.map(h => ({ handle: h, title: h, imageUrl: null, imageAlt: null })));
-    }
+  // Processar em lotes concorrentes
+  for (let i = 0; i < handles.length; i += CONCURRENT) {
+    const batch = handles.slice(i, i + CONCURRENT);
+    const results = await Promise.all(batch.map(h => fetchOne(domain, token, h)));
+    resultados.push(...results);
   }
 
   return NextResponse.json({ imagens: resultados });
