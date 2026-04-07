@@ -10,10 +10,13 @@ export interface ReviewInput {
   rating: number;
 }
 
+export type TipoProblema = 'produto' | 'logistica' | 'outro';
+
 export interface ProblemaResultado {
   categoria: string;
   quantidade: number;
   percentual: number;
+  tipo: TipoProblema;
 }
 
 export interface ProdutoResultado {
@@ -22,7 +25,7 @@ export interface ProdutoResultado {
   total_negativas: number;
   nota_media: number;
   problemas: ProblemaResultado[];
-  omitidas: number;
+  outros: number; // reviews de categoria única (< 2 ocorrências) ou genéricas
 }
 
 export interface AnalisarResponse {
@@ -36,32 +39,52 @@ export interface AnalisarResponse {
 const BATCH_SIZE = 300;
 const BATCH_TIMEOUT_MS = 60_000;
 
-const SYSTEM_PROMPT = `Você é um analista de qualidade de e-commerce. Recebeu avaliações negativas de clientes.
+// Categorias de logística — aparecem em cinza no card
+const CATEGORIAS_LOGISTICA = new Set([
+  'Produto não chegou',
+  'Entrega atrasada',
+  'Produto errado enviado',
+  'Embalagem danificada',
+  'Pedido extraviado',
+]);
 
-Para cada avaliação, classifique o MOTIVO PRINCIPAL da insatisfação em UMA categoria curta (2-4 palavras).
+const SYSTEM_PROMPT = `Você é um analista de qualidade especialista em e-commerce de capas para móveis (cadeiras, sofás, poltronas).
+Recebeu avaliações negativas de clientes. Classifique cada avaliação em UMA categoria padronizada.
 
-Categorias devem ser padronizadas e reutilizáveis. Exemplos:
-- "Tamanho inadequado"
-- "Material frágil"
-- "Diferente da foto"
-- "Não serviu no móvel"
-- "Defeito de fabricação"
-- "Entrega atrasada"
-- "Embalagem danificada"
-- "Cor diferente"
-- "Não é impermeável"
-- "Difícil de colocar"
+## Categorias de PRODUTO (problemas de qualidade/adequação):
+- "Qualidade do tecido" — material fino, fraco, não durável, se desfaz
+- "Ficou grande" — capa folgada, grande demais, não ajusta no móvel, fica sobrando
+- "Ficou pequeno" — capa justa demais, não cobriu o móvel, não estica, não encaixou
+- "Gato rasgou a capa" — arranhado por pets, material não resistiu a gatos
+- "Cor diferente da foto" — cor veio diferente do anunciado, cor errada
+- "Não é impermeável" — líquido atravessou o tecido, manchou, prometia impermeabilidade
+- "Difícil de colocar" — processo de encaixe difícil, não fica bem posicionada
+- "Defeito de fabricação" — costura abriu, rasgou no primeiro uso, defeito físico na peça
+- "Produto diferente da foto" — produto veio diferente do anunciado (não apenas a cor)
+- "Material ruim" — tecido grosseiro, acabamento fraco, qualidade abaixo do esperado
 
-Regras:
-- Use SEMPRE a mesma categoria para problemas similares (não criar variações)
-- Se a avaliação menciona múltiplos problemas, classifique pelo PRINCIPAL
-- Se o texto é vago ou não identifica um problema claro, use "Insatisfação geral"
-- Responda APENAS em JSON, sem markdown, sem preamble
+## Categorias de LOGÍSTICA (problemas de entrega — não relacionados à qualidade do produto):
+- "Produto não chegou" — não foi entregue, extraviado, não recebeu
+- "Entrega atrasada" — demorou muito mais que o prazo
+- "Produto errado enviado" — enviaram SKU/modelo diferente do pedido
+- "Embalagem danificada" — chegou amassado, rasgado, mal embalado
 
-Formato de resposta (JSON array):
+## Categoria GENÉRICA:
+- "Insatisfação geral" — reclamação vaga, cliente insatisfeito sem motivo claro identificável
+
+## Regras críticas:
+1. Use SEMPRE a categoria exata da lista acima — nunca crie variações ou sinônimos
+2. Classifique pelo problema PRINCIPAL se houver múltiplos
+3. "Ficou grande" e "Ficou pequeno" são DISTINTOS — leia o contexto para diferenciar
+4. Se mencionar gato/pet destruindo, use "Gato rasgou a capa"
+5. Reclamações sobre cor → "Cor diferente da foto" (não "Produto diferente da foto")
+6. Responda APENAS JSON, sem markdown, sem preamble
+
+## Formato de resposta:
 [
-  {"index": 0, "categoria": "Tamanho inadequado"},
-  {"index": 1, "categoria": "Material frágil"}
+  {"index": 0, "categoria": "Ficou grande", "tipo": "produto"},
+  {"index": 1, "categoria": "Produto não chegou", "tipo": "logistica"},
+  {"index": 2, "categoria": "Insatisfação geral", "tipo": "outro"}
 ]`;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -77,6 +100,7 @@ function buildUserMessage(batch: ReviewInput[], offset: number): string {
 interface ClassificacaoItem {
   index: number;
   categoria: string;
+  tipo: TipoProblema;
 }
 
 async function classificarBatch(
@@ -116,10 +140,19 @@ function agruparPorProduto(reviews: ReviewInput[]): Map<string, ReviewInput[]> {
   return map;
 }
 
+function inferirTipo(categoria: string): TipoProblema {
+  if (CATEGORIAS_LOGISTICA.has(categoria)) return 'logistica';
+  if (categoria === 'Insatisfação geral') return 'outro';
+  return 'produto';
+}
+
 // ─── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  let body: { reviews: ReviewInput[]; total_reviews_por_produto: Record<string, { total: number; nota_media: number }> };
+  let body: {
+    reviews: ReviewInput[];
+    total_reviews_por_produto: Record<string, { total: number; nota_media: number }>;
+  };
 
   try {
     body = await request.json();
@@ -141,8 +174,8 @@ export async function POST(request: NextRequest) {
     batches.push(reviews.slice(i, i + BATCH_SIZE));
   }
 
-  // Mapa global: índice global → categoria
-  const categoriasMap = new Map<number, string>();
+  // Mapa global: índice global → classificação
+  const classificacoes = new Map<number, ClassificacaoItem>();
   let batches_com_erro = 0;
 
   for (let b = 0; b < batches.length; b++) {
@@ -159,13 +192,14 @@ export async function POST(request: NextRequest) {
         resultado = await classificarBatch(client, batch, offset);
       } catch {
         batches_com_erro++;
-        // Pular batch com erro — não bloqueia
         continue;
       }
     }
 
     for (const item of resultado) {
-      categoriasMap.set(item.index, item.categoria);
+      // Garantir tipo correto mesmo que Claude devolva errado
+      const tipo = inferirTipo(item.categoria);
+      classificacoes.set(item.index, { ...item, tipo });
     }
   }
 
@@ -174,42 +208,62 @@ export async function POST(request: NextRequest) {
   const produtos: ProdutoResultado[] = [];
 
   for (const [handle, revs] of reviewsByProduct.entries()) {
-    const totais = total_reviews_por_produto[handle] ?? { total: revs.length, nota_media: 0 };
+    const totais = total_reviews_por_produto[handle] ?? {
+      total: revs.length,
+      nota_media: 0,
+    };
 
     // Contar categorias
-    const contagem = new Map<string, number>();
-    let indexGlobal = reviews.findIndex(r => r.product_handle === handle);
+    const contagem = new Map<string, { quantidade: number; tipo: TipoProblema }>();
 
-    for (let i = 0; i < revs.length; i++) {
-      const idx = reviews.indexOf(revs[i]);
-      const cat = categoriasMap.get(idx) ?? 'Insatisfação geral';
-      contagem.set(cat, (contagem.get(cat) ?? 0) + 1);
-    }
+    for (const rev of revs) {
+      const idx = reviews.indexOf(rev);
+      const cl = classificacoes.get(idx);
+      const categoria = cl?.categoria ?? 'Insatisfação geral';
+      const tipo = cl ? inferirTipo(cl.categoria) : 'outro';
 
-    const totalNeg = revs.length;
-    const MIN_PCT = 5;
-
-    const problemasFiltrados: ProblemaResultado[] = [];
-    let omitidas = 0;
-
-    for (const [cat, qtd] of contagem.entries()) {
-      const pct = (qtd / totalNeg) * 100;
-      if (pct < MIN_PCT) {
-        omitidas += qtd;
+      const entry = contagem.get(categoria);
+      if (entry) {
+        entry.quantidade++;
       } else {
-        problemasFiltrados.push({ categoria: cat, quantidade: qtd, percentual: pct });
+        contagem.set(categoria, { quantidade: 1, tipo });
       }
     }
 
-    problemasFiltrados.sort((a, b) => b.quantidade - a.quantidade);
+    const totalNeg = revs.length;
+    const MIN_OCORRENCIAS = 2;
+
+    const problemas: ProblemaResultado[] = [];
+    let outros = 0;
+
+    for (const [cat, { quantidade, tipo }] of contagem.entries()) {
+      if (quantidade >= MIN_OCORRENCIAS) {
+        problemas.push({
+          categoria: cat,
+          quantidade,
+          percentual: (quantidade / totalNeg) * 100,
+          tipo,
+        });
+      } else {
+        // Ocorrência única → vai para "Outros não identificados"
+        outros += quantidade;
+      }
+    }
+
+    // Ordenar: produto > logistica > outro, dentro de cada grupo por quantidade desc
+    const ordemTipo: Record<TipoProblema, number> = { produto: 0, logistica: 1, outro: 2 };
+    problemas.sort((a, b) => {
+      const dt = ordemTipo[a.tipo] - ordemTipo[b.tipo];
+      return dt !== 0 ? dt : b.quantidade - a.quantidade;
+    });
 
     produtos.push({
       product_handle: handle,
       total_reviews: totais.total,
       total_negativas: totalNeg,
       nota_media: totais.nota_media,
-      problemas: problemasFiltrados,
-      omitidas,
+      problemas,
+      outros,
     });
   }
 

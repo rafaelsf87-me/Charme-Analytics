@@ -52,11 +52,11 @@ async function fetchImagesBatch(handles: string[]): Promise<ProdutoImagem[]> {
     }
   }`;
 
-  const res = await fetch(`https://${domain}/api/2024-01/graphql.json`, {
+  const res = await fetch(`https://${domain}/admin/api/2024-10/graphql.json`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Shopify-Storefront-Access-Token': token,
+      'X-Shopify-Access-Token': token,
     },
     body: JSON.stringify({ query }),
   });
@@ -79,7 +79,6 @@ async function fetchImagesBatch(handles: string[]): Promise<ProdutoImagem[]> {
     });
   }
 
-  // Preencher handles não encontrados com placeholder
   return handles.map(h =>
     found.get(h) ?? { handle: h, title: h, imageUrl: null, imageAlt: null }
   );
@@ -108,7 +107,6 @@ export async function POST(request: NextRequest) {
       const imgs = await fetchImagesBatch(batch);
       resultados.push(...imgs);
     } catch {
-      // Erro Shopify: usar placeholder para este batch
       resultados.push(...batch.map(h => ({ handle: h, title: h, imageUrl: null, imageAlt: null })));
     }
   }

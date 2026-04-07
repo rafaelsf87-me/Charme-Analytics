@@ -195,12 +195,6 @@ export function AvaliacoesView() {
       <div className="flex flex-col min-h-screen bg-charme-bg">
         <Header />
         <main className="flex flex-1 flex-col items-center justify-center px-6 py-10">
-          <div className="mb-8 text-center">
-            <h1 className="text-lg font-semibold text-charme-text">Upload de Avaliações</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Importe o CSV exportado do Judge.me para análise automática
-            </p>
-          </div>
           <UploadForm onConfirm={handleConfirm} />
         </main>
       </div>

@@ -133,6 +133,7 @@ export function UploadForm({ onConfirm }: UploadFormProps) {
     setDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
@@ -157,6 +158,12 @@ export function UploadForm({ onConfirm }: UploadFormProps) {
 
     return (
       <div className="w-full max-w-lg mx-auto">
+        {/* Título pós-upload */}
+        <div className="mb-6 text-center">
+          <h1 className="text-lg font-semibold text-charme-text">Arquivo Importado com Sucesso</h1>
+          <p className="mt-1 text-sm text-zinc-500">Revise o resumo antes de iniciar a análise</p>
+        </div>
+
         <div className="bg-white border border-charme-border rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <span className="text-lg">📊</span>
@@ -218,6 +225,14 @@ export function UploadForm({ onConfirm }: UploadFormProps) {
 
   return (
     <div className="w-full max-w-lg mx-auto">
+      {/* Título pré-upload */}
+      <div className="mb-6 text-center">
+        <h1 className="text-lg font-semibold text-charme-text">Upload de Avaliações</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Importe o CSV exportado do Judge.me para análise automática
+        </p>
+      </div>
+
       <div
         onDrop={onDrop}
         onDragOver={onDragOver}
