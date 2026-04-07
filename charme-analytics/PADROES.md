@@ -19,23 +19,27 @@ Ao gerar uma resposta com tabela, verifique se existe um padrão aqui para o tip
 **Fonte:** GA4 (ga4_get_item_report)
 **Quando usar:** perguntas sobre ATC, views, taxa de conversão por produto
 
-| Produto | Views | ATC | Taxa ATC (%) | Checkout | Taxa Checkout (%) | Receita (GA4 — est.) |
+| Produto | Views | ATC | ATC (%) | Checkout | Checkout (%) | Receita (GA4 — est.) |
 |---|---|---|---|---|---|---|
 
-- **Ordenação padrão:** Views (desc)
-- Taxa ATC = ATC ÷ Views × 100
-- Taxa Checkout = Checkout ÷ ATC × 100
+- **Ordenação padrão:** Receita (desc) — sempre, mesmo quando a análise é de ATC ou checkout
+- ATC = contagem bruta de cliques no carrinho (corrigido ÷5 para cadeiras)
+- ATC (%) = ATC ÷ Views × 100
+- Checkout = número de compras (itemsPurchased)
+- Checkout (%) = Checkout ÷ ATC × 100
 - Cadeira: ATC já vem corrigido (÷5 automático) — mencionar "ATC corrigido" na resposta
 - Marcadores 🟢🔴 top/bottom 30%
 - Seção "⭐ Produtos Destaque" gerada automaticamente pela tool — manter
 - Se usuário especificar threshold de views (ex: "+4.000 views"), filtrar APÓS receber dados
 - `ranking_mode: 'both'` para "top N melhores e piores" (1 chamada, não 2)
 - Coluna "Receita (GA4 — est.)" sempre presente — marcar como estimativa pois pode divergir do Shopify
+- NUNCA omitir colunas ATC (count) ou Checkout (%) — a tool sempre retorna todas
 
 **❌ NÃO fazer:**
 - Não buscar vendas no Shopify quando a pergunta é sobre ATC/Views
 - Não apresentar "quantidade vendida" quando o pedido é sobre comportamento
 - Não ignorar threshold solicitado pelo usuário
+- Não ordenar por views ou por taxa — ordenação final SEMPRE por receita
 
 ---
 

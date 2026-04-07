@@ -496,35 +496,22 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
     };
 
     // ── Cabeçalhos da tabela ─────────────────────────────────────────────────
-    const rateHeader    = isCheckout ? 'Taxa Checkout' : 'Taxa ATC';
-    const viewsHeader   = min_views ? `Views (>${min_views.toLocaleString('pt-BR')})` : 'Views';
-    const headers       = ['#', 'Produto', viewsHeader, 'Taxa ATC', 'Compras', 'Taxa Checkout', 'Receita'];
-    const headersSimple = ['#', 'Produto', viewsHeader, rateHeader, 'Compras', 'Receita'];
+    const viewsHeader = min_views ? `Views (>${min_views.toLocaleString('pt-BR')})` : 'Views';
+    const headers     = ['#', 'Produto', viewsHeader, 'ATC', 'ATC (%)', 'Checkout', 'Checkout (%)', 'Receita'];
 
-    // Para relatório de checkout, exibe as 3 taxas (ATC + Checkout); senão, exibe só a taxa relevante
-    const toRow = (r: typeof processed[0], i: number): string[] => {
-      if (isCheckout) {
-        return [
-          String(i + 1),
-          getMarker(r) + r.name,
-          r.views.toLocaleString('pt-BR'),
-          `${r.atcRate.toFixed(1)}%`,
-          String(r.purchases),
-          `${r.checkoutRate.toFixed(1)}%`,
-          formatBRL(r.revenue),
-        ];
-      }
-      return [
-        String(i + 1),
-        getMarker(r) + r.name,
-        r.views.toLocaleString('pt-BR'),
-        `${r.atcRate.toFixed(1)}%`,
-        String(r.purchases),
-        formatBRL(r.revenue),
-      ];
-    };
+    // Sempre exibe todas as colunas: ATC count, ATC %, Checkout count, Checkout %, Receita
+    const toRow = (r: typeof processed[0], i: number): string[] => [
+      String(i + 1),
+      getMarker(r) + r.name,
+      r.views.toLocaleString('pt-BR'),
+      r.atcCount.toLocaleString('pt-BR'),
+      `${r.atcRate.toFixed(1)}%`,
+      String(r.purchases),
+      r.atcCount > 0 ? `${r.checkoutRate.toFixed(1)}%` : '—',
+      formatBRL(r.revenue),
+    ];
 
-    const usedHeaders = isCheckout ? headers : headersSimple;
+    const usedHeaders = headers;
 
     const sortLabel: Record<string, string> = {
       atc: 'taxa ATC', views: 'views', purchases: 'compras', revenue: 'receita', checkout: 'taxa checkout',
@@ -537,10 +524,14 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
     // ── Montagem do output ───────────────────────────────────────────────────
     let output = '';
 
+    // Re-ordenar por receita (desc) para apresentação — identifica impacto financeiro
+    const sortByRevenue = <T extends { revenue: number }>(items: T[]): T[] =>
+      [...items].sort((a, b) => b.revenue - a.revenue);
+
     if (isBoth) {
       // TOP N Melhores + TOP N Piores (sorted desc, piores = last N)
-      const best  = processed.slice(0, safeLimit);
-      const worst = processed.slice(-safeLimit).reverse(); // pior primeiro
+      const best  = sortByRevenue(processed.slice(0, safeLimit));
+      const worst = sortByRevenue(processed.slice(-safeLimit).reverse()); // pior primeiro
 
       const bestTable  = compactTable(usedHeaders, best.map(toRow));
       const worstTable = compactTable(usedHeaders, worst.map(toRow));
@@ -553,9 +544,7 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
         `💔 **TOP ${safeLimit} PIORES** — ${sortLabel[sort_by] ?? sort_by}\n` +
         `${worstTable}`;
     } else {
-      const display   = ranking_mode === 'worst'
-        ? processed.slice(0, safeLimit)  // já estava reversed
-        : processed.slice(0, safeLimit);
+      const display   = sortByRevenue(processed.slice(0, safeLimit));
       const rankLabel = ranking_mode === 'worst' ? 'Piores' : 'Top';
       const mainTable = compactTable(usedHeaders, display.map(toRow));
 
@@ -576,7 +565,8 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
     // Marcadores de correlação
     const anyMarker = processed.some(r => getMarker(r) !== '');
     if (anyMarker) {
-      output += `\n🟢 ${isCheckout ? 'Checkout' : 'ATC'} + receita acima da média | 🔴 Receita alta com ${isCheckout ? 'checkout' : 'ATC'} baixo`;
+      const rateLabel = isCheckout ? 'Checkout (%)' : 'ATC (%)';
+      output += `\n🟢 ${rateLabel} + receita acima da média | 🔴 Receita alta com ${rateLabel} baixo`;
     }
 
     // ── Seção "Produtos Destaque a Considerar" (comparação relativa) ────────
