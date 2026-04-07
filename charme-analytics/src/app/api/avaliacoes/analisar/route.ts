@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
+export const maxDuration = 300; // 5 min — necessário para volumes maiores
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ReviewInput {
@@ -36,8 +38,8 @@ export interface AnalisarResponse {
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
-const BATCH_SIZE = 300;
-const BATCH_TIMEOUT_MS = 60_000;
+const BATCH_SIZE = 80;
+const BATCH_TIMEOUT_MS = 90_000;
 
 // Categorias de logística — aparecem em cinza no card
 const CATEGORIAS_LOGISTICA = new Set([
@@ -103,31 +105,62 @@ interface ClassificacaoItem {
   tipo: TipoProblema;
 }
 
+function parseClassificacoes(raw: string, batchSize: number, offset: number): ClassificacaoItem[] {
+  // Limpar markdown code fences que o modelo pode retornar
+  let text = raw
+    .replace(/```(?:json)?\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim();
+
+  // Tentar extrair apenas o array JSON (ignora texto extra antes/depois)
+  const arrayMatch = text.match(/\[[\s\S]*\]/);
+  if (arrayMatch) text = arrayMatch[0];
+
+  try {
+    const parsed = JSON.parse(text) as ClassificacaoItem[];
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Fallback: tentar extrair objetos individuais
+    const items: ClassificacaoItem[] = [];
+    const objRegex = /\{\s*"index"\s*:\s*(\d+)\s*,\s*"categoria"\s*:\s*"([^"]+)"\s*,\s*"tipo"\s*:\s*"([^"]+)"\s*\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = objRegex.exec(text)) !== null) {
+      items.push({
+        index: parseInt(m[1]),
+        categoria: m[2],
+        tipo: m[3] as TipoProblema,
+      });
+    }
+    if (items.length > 0) return items;
+  }
+
+  // Fallback final: classificar tudo como Insatisfação geral para não perder o batch
+  return Array.from({ length: batchSize }, (_, i) => ({
+    index: offset + i,
+    categoria: 'Insatisfação geral',
+    tipo: 'outro' as TipoProblema,
+  }));
+}
+
 async function classificarBatch(
   client: Anthropic,
   batch: ReviewInput[],
   offset: number
 ): Promise<ClassificacaoItem[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), BATCH_TIMEOUT_MS);
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Timeout')), BATCH_TIMEOUT_MS)
+  );
 
-  try {
-    const msg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildUserMessage(batch, offset) }],
-    });
+  const apiPromise = client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 8192,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: buildUserMessage(batch, offset) }],
+  });
 
-    clearTimeout(timer);
-
-    const text = msg.content.find(b => b.type === 'text')?.text ?? '[]';
-    const parsed: ClassificacaoItem[] = JSON.parse(text);
-    return parsed;
-  } catch {
-    clearTimeout(timer);
-    throw new Error('Batch timeout ou erro Claude');
-  }
+  const msg = await Promise.race([apiPromise, timeoutPromise]);
+  const raw = msg.content.find(b => b.type === 'text')?.text ?? '[]';
+  return parseClassificacoes(raw, batch.length, offset);
 }
 
 function agruparPorProduto(reviews: ReviewInput[]): Map<string, ReviewInput[]> {

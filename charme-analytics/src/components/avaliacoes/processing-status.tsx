@@ -5,8 +5,8 @@ interface ProcessingStatusProps {
 }
 
 export function ProcessingStatus({ totalNegativas }: ProcessingStatusProps) {
-  const batches = Math.ceil(totalNegativas / 300);
-  const minutos = batches <= 2 ? '<1' : batches <= 5 ? '1-2' : '2-3';
+  const batches = Math.ceil(totalNegativas / 80);
+  const minutos = batches <= 3 ? '<1' : batches <= 8 ? '1-2' : '2-4';
 
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-6 py-16">
