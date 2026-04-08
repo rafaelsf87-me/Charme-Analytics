@@ -16,18 +16,12 @@ type Mode = 'upload' | 'processing' | 'results';
 
 // ─── Resumo consolidado ────────────────────────────────────────────────────────
 
-function ResumoConsolidado({ produtos, totalProdutos }: { produtos: ProdutoResultado[]; totalProdutos: number }) {
-  const totalNegativas = produtos.reduce((s, p) => s + p.total_negativas, 0);
-
-  // Somar quantidades por categoria em todos os produtos
-  const contagem = new Map<string, number>();
-  for (const p of produtos) {
-    for (const prob of p.problemas) {
-      contagem.set(prob.categoria, (contagem.get(prob.categoria) ?? 0) + prob.quantidade);
-    }
-  }
-
-  const top5 = [...contagem.entries()]
+function ResumoConsolidado({ resumoGlobal, totalNegativas, totalProdutos }: {
+  resumoGlobal: Record<string, number>;
+  totalNegativas: number;
+  totalProdutos: number;
+}) {
+  const top5 = Object.entries(resumoGlobal)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
@@ -46,12 +40,14 @@ function ResumoConsolidado({ produtos, totalProdutos }: { produtos: ProdutoResul
         {top5.map(([cat, qtd], i) => {
           const pct = totalNegativas > 0 ? (qtd / totalNegativas) * 100 : 0;
           const barPct = max > 0 ? (qtd / max) * 100 : 0;
+          const isPositiva = cat === 'Avaliação Positiva';
           return (
             <div key={cat}>
               <div className="flex items-center justify-between mb-1 gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-[10px] font-bold text-zinc-400 w-4 shrink-0">#{i + 1}</span>
-                  <span className="text-sm font-medium text-zinc-700 truncate">{cat}</span>
+                  <span className={`text-sm font-medium truncate ${isPositiva ? 'text-green-600' : 'text-zinc-700'}`}>{cat}</span>
+                  {isPositiva && <span className="text-[9px] bg-green-100 text-green-600 border border-green-200 rounded px-1 shrink-0">positiva</span>}
                 </div>
                 <span className="text-xs tabular-nums text-zinc-500 shrink-0">
                   {qtd} <span className="text-zinc-400">({pct.toFixed(1)}%)</span>
@@ -60,7 +56,7 @@ function ResumoConsolidado({ produtos, totalProdutos }: { produtos: ProdutoResul
               <div className="w-full bg-zinc-100 rounded-full h-2">
                 <div
                   className="h-2 rounded-full transition-all"
-                  style={{ width: `${barPct}%`, backgroundColor: '#553679' }}
+                  style={{ width: `${barPct}%`, backgroundColor: isPositiva ? '#16a34a' : '#553679' }}
                 />
               </div>
             </div>
@@ -146,6 +142,7 @@ export function AvaliacoesView() {
   const [imagens, setImagens] = useState<Map<string, ProdutoImagem>>(new Map());
   const [errosApi, setErrosApi] = useState<string[]>([]);
   const [busca, setBusca] = useState('');
+  const [resumoGlobal, setResumoGlobal] = useState<Record<string, number>>({});
 
   async function handleConfirm(data: ParsedData) {
     setParsedData(data);
@@ -179,6 +176,7 @@ export function AvaliacoesView() {
 
       const resultado: AnalisarResponse = await res.json();
       setProdutos(resultado.produtos);
+      setResumoGlobal(resultado.resumo_global ?? {});
 
       if (resultado.batches_com_erro > 0) {
         setErrosApi([`${resultado.batches_com_erro} lote(s) com erro foram ignorados.`]);
@@ -218,6 +216,7 @@ export function AvaliacoesView() {
     setImagens(new Map());
     setErrosApi([]);
     setBusca('');
+    setResumoGlobal({});
   }
 
   // Top 40 para o dashboard (resumo usa todos)
@@ -341,8 +340,12 @@ export function AvaliacoesView() {
                 </div>
               </div>
 
-              {/* Resumo consolidado — usa TODOS os produtos, não só os filtrados */}
-              <ResumoConsolidado produtos={produtos} totalProdutos={produtos.length} />
+              {/* Resumo consolidado — usa resumo_global (dados brutos da IA, sem filtro MIN_OCORRENCIAS) */}
+              <ResumoConsolidado
+                resumoGlobal={resumoGlobal}
+                totalNegativas={produtos.reduce((s, p) => s + p.total_negativas, 0)}
+                totalProdutos={produtos.length}
+              />
 
               {/* Grid de cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

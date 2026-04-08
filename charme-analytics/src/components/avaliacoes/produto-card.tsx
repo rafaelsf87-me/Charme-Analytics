@@ -19,17 +19,20 @@ function fmtPct(n: number): string {
 }
 
 function barColor(tipo: TipoProblema): string {
+  if (tipo === 'positiva') return '#16a34a';
   if (tipo === 'logistica') return '#a1a1aa';
   if (tipo === 'outro') return '#d4d4d8';
   return '#553679';
 }
 
 function labelClass(tipo: TipoProblema): string {
+  if (tipo === 'positiva') return 'text-green-600 font-medium';
   if (tipo === 'logistica' || tipo === 'outro') return 'text-zinc-400';
   return 'text-zinc-700 font-medium';
 }
 
 function valueClass(tipo: TipoProblema): string {
+  if (tipo === 'positiva') return 'text-green-500';
   if (tipo === 'logistica' || tipo === 'outro') return 'text-zinc-400';
   return 'text-zinc-500';
 }

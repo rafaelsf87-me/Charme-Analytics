@@ -12,7 +12,7 @@ export interface ReviewInput {
   rating: number;
 }
 
-export type TipoProblema = 'produto' | 'logistica' | 'outro';
+export type TipoProblema = 'produto' | 'logistica' | 'outro' | 'positiva';
 
 export interface ProblemaResultado {
   categoria: string;
@@ -36,6 +36,7 @@ export interface AnalisarResponse {
   produtos: ProdutoResultado[];
   batches_com_erro: number;
   total_processadas: number;
+  resumo_global: Record<string, number>; // contagem bruta de cada categoria (sem filtro MIN_OCORRENCIAS)
 }
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
@@ -46,13 +47,14 @@ const MIN_OCORRENCIAS = 2;
 
 // Rollup: subcategorias sobem para o pai quando abaixo do mínimo
 const ROLLUP_PARENT: Record<string, string> = {
-  'Qualidade Ruim - Tecido':   'Qualidade Ruim',
-  'Qualidade Ruim - Costura':  'Qualidade Ruim',
-  'Qualidade Ruim - Rasgou':   'Qualidade Ruim',
-  'Qualidade Ruim - Escorrega':'Qualidade Ruim',
-  'Qualidade - Manchado':      'Qualidade Ruim',
-  'Não Serviu - Grande':       'Não Serviu',
-  'Não Serviu - Pequeno':      'Não Serviu',
+  'Qualidade Ruim - Tecido':     'Qualidade Ruim',
+  'Qualidade Ruim - Costura':    'Qualidade Ruim',
+  'Qualidade Ruim - Rasgou':     'Qualidade Ruim',
+  'Qualidade Ruim - Escorrega':  'Qualidade Ruim',
+  'Qualidade - Manchado':        'Qualidade Ruim',
+  'Defeito Tecido - Manchas':    'Qualidade Ruim',
+  'Não Serviu - Grande':         'Não Serviu',
+  'Não Serviu - Pequeno':        'Não Serviu',
 };
 
 // Categorias de logística — aparecem em cinza no card
@@ -67,8 +69,13 @@ const CATEGORIAS_OUTRO = new Set([
   'Outros / Genérico',
 ]);
 
+// Avaliações positivas (rating baixo mas comentário positivo)
+const CATEGORIAS_POSITIVA = new Set([
+  'Avaliação Positiva',
+]);
+
 const SYSTEM_PROMPT = `Você é um analista de qualidade especialista em e-commerce de capas para móveis (cadeiras, sofás, poltronas).
-Classifique cada avaliação negativa em UMA das categorias abaixo. Use EXATAMENTE o nome da categoria listado.
+Classifique cada avaliação em UMA das categorias abaixo. Use EXATAMENTE o nome da categoria listado. Inclui avaliações com rating baixo mas comentário positivo (→ "Avaliação Positiva").
 
 As categorias têm hierarquia: algumas são genéricas (ex: "Qualidade Ruim") e outras são específicas (ex: "Qualidade Ruim - Costura"). Sempre prefira a categoria ESPECÍFICA quando o texto permitir identificar o subproblema.
 
@@ -86,13 +93,13 @@ Exemplos: "Material muito fraco, achei que era melhor" / "Me decepcionei, espera
 
 ### Qualidade Ruim - Tecido
 Reclamação específica sobre o tecido ser fino, fraco, brilhante, plástico ou de má qualidade.
-Palavras-chave: tecido fino, tecido fraco, tecido brilhante, tecido plástico, material fino, parece plástico
-Exemplos: "Tecido muito fino. Não protegerá em nada minhas cadeiras." / "Péssimo acabamento! Tecido brilhante!!!!"
+Palavras-chave: tecido fino, tecido fraco, tecido brilhante, tecido plástico, material fino, parece plástico, pelo anuncio o tecido era mais grosso, tecido muito fino
+Exemplos: "Tecido muito fino. Não protegerá em nada minhas cadeiras." / "Péssimo acabamento! Tecido brilhante!!!!" / "Não gostei muito: Não gostei muito, porque o tecido é muito fino, pelo anuncio o tecido era mais grosso!" → "Qualidade Ruim - Tecido"
 
 ### Qualidade Ruim - Costura
-Problemas com costura, acabamento, fita de ajuste, peças descosturadas.
-Palavras-chave: costura, descosturada, mal acabada, fita arrebentou, costurada torto, acabamento ruim, falha na costura
-Exemplos: "Duas capas vieram com falha na costura" / "Uma delas veio descosturada na lateral e costurada tudo torto" / "A fita de ajuste arrebentou."
+Problemas com costura, acabamento, fita de ajuste, peças descosturadas, capas que ficam tortas.
+Palavras-chave: costura, descosturada, mal acabada, fita arrebentou, costurada torto, acabamento ruim, falha na costura, tortas, ficam tortas, ficam tortos, mal feitas, não estão bem feitas
+Exemplos: "Duas capas vieram com falha na costura" / "Uma delas veio descosturada na lateral e costurada tudo torto" / "A fita de ajuste arrebentou." / "DESCONTENTE: JÁ TINHA COMPRADO CAPAS DE VOCES, PORÉM ESTAS NÃO ESTÃO BEM FEITAS, FICAM TORTAS NAS CADEIRAS, DESTA VEZ NÃO GOSTEI!" → "Qualidade Ruim - Costura"
 
 ### Qualidade Ruim - Rasgou
 Produto rasgou, furou, desfiou ou soltou fios em pouco tempo de uso.
@@ -115,9 +122,9 @@ Palavras-chave: pequena, apertada, curta, não coube, menor que, muito justa, n�
 Exemplos: "Ficaram pequenas e minhas cadeiras são padrão" / "Veio pequena, fiz a devolução"
 
 ### Não Serviu - Grande
-Capa ficou grande, solta, sobrando, folgada.
-Palavras-chave: grande, solta, folgada, imensa, sobrando, enorme, larga demais, muito solta
-Exemplos: "A capa ficou muito solta no sofá" / "Ficou imensa, sobrando" / "Grande, não é ajustável." / "A capa ficou muito solta no sofá"
+Capa ficou grande, solta, sobrando, folgada — ou a modelagem ficou muito grande para o móvel.
+Palavras-chave: grande, solta, folgada, imensa, sobrando, enorme, larga demais, muito solta, ficou muito grande, modelagem grande, muito largo, não expande ficou grande
+Exemplos: "A capa ficou muito solta no sofá" / "Ficou imensa, sobrando" / "Grande, não é ajustável." / "O tecido é grosso, do tipo que não expande. Nas minhas cadeiras ficou muito grande a modelagem." → "Não Serviu - Grande"
 
 ### Cor Errada
 Cor recebida diferente da comprada ou variação de cor entre unidades do mesmo pedido.
@@ -144,10 +151,21 @@ Dificuldade em colocar, instalar ou usar o produto (diferente de "não serviu" �
 Palavras-chave: difícil de colocar, chato de usar, complicado, não fica arrumado, trabalhoso
 Exemplos: "É lindo, mas muito chato de usar, o sofá não fica arrumado"
 
+### Defeito Tecido - Manchas
+Produto chegou com manchas, sujeira ou defeito visual manchado no tecido.
+Palavras-chave: manchas, manchado, veio com mancha, mancha no tecido, sujeira, sujo, contrário ao esperado manchado
+Exemplos: "Veio com manchas: Veio com manchas, totalmente contrário ao esperado e também não gostei da qualidade do material." → "Defeito Tecido - Manchas"
+
 ### Comprou Errado (problema unidades)
 Cliente se confundiu com o site — não é erro da loja, é confusão do cliente.
 Palavras-chave: 1 unidade, achei que era par, pensei que vinham mais, site confuso, não ficou claro
 Exemplos: "Deveriam deixar mais explícito no site que é apenas 1 unidade"
+
+### Avaliação Positiva
+SOMENTE quando o comentário é 100% positivo/elogio, mesmo com rating baixo (1-3 estrelas). Indica erro do cliente ao dar a nota.
+Palavras-chave: amei, gostei, ótimo, excelente, ficou ótimo, muito bom, adorei, recomendo, qualidade boa, superou expectativas, lindo, bonito, chegou rápido e perfeito, estou satisfeito
+Exemplos: "Amei o produto! Chegou bem embalado e qualidade ótima." / "Gostei muito, recomendo!"
+ATENÇÃO: Use SOMENTE quando NÃO há qualquer reclamação no texto. Se houver qualquer problema mencionado, classifique pelo problema.
 
 ### Outros / Genérico
 Usar APENAS quando o texto não se encaixa em nenhuma categoria acima. Inclui: pós-venda ruim sem outro problema, avaliação sem informação útil, devolveu sem explicar motivo.
@@ -176,7 +194,8 @@ Exemplos: "Não posso avaliar pois o material foi devolvido" / "Loja não respon
 [
   {"index": 0, "categoria": "Não Serviu - Grande", "tipo": "produto"},
   {"index": 1, "categoria": "Não Recebi (atraso)", "tipo": "logistica"},
-  {"index": 2, "categoria": "Outros / Genérico", "tipo": "outro"}
+  {"index": 2, "categoria": "Outros / Genérico", "tipo": "outro"},
+  {"index": 3, "categoria": "Avaliação Positiva", "tipo": "positiva"}
 ]`;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -265,6 +284,7 @@ function agruparPorProduto(reviews: ReviewInput[]): Map<string, ReviewInput[]> {
 }
 
 function inferirTipo(categoria: string): TipoProblema {
+  if (CATEGORIAS_POSITIVA.has(categoria)) return 'positiva';
   if (CATEGORIAS_LOGISTICA.has(categoria)) return 'logistica';
   if (CATEGORIAS_OUTRO.has(categoria)) return 'outro';
   return 'produto';
@@ -321,6 +341,13 @@ export async function POST(request: NextRequest) {
       const tipo = inferirTipo(item.categoria);
       classificacoes.set(item.index, { ...item, tipo });
     }
+  }
+
+  // Resumo global — conta TODAS as classificações brutas, sem filtro MIN_OCORRENCIAS
+  const resumo_global: Record<string, number> = {};
+  for (const [, cl] of classificacoes.entries()) {
+    const cat = cl.categoria;
+    resumo_global[cat] = (resumo_global[cat] ?? 0) + 1;
   }
 
   // Agregar por produto
@@ -382,8 +409,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Ordenar: produto (por qtd desc) → logistica → outro
-    const ordemTipo: Record<TipoProblema, number> = { produto: 0, logistica: 1, outro: 2 };
+    // Ordenar: produto → logistica → outro → positiva
+    const ordemTipo: Record<TipoProblema, number> = { produto: 0, logistica: 1, outro: 2, positiva: 3 };
     problemas.sort((a, b) => {
       const dt = ordemTipo[a.tipo] - ordemTipo[b.tipo];
       return dt !== 0 ? dt : b.quantidade - a.quantidade;
@@ -405,6 +432,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     produtos,
     batches_com_erro,
-    total_processadas: reviews.length - batches_com_erro * BATCH_SIZE,
+    total_processadas: classificacoes.size,
+    resumo_global,
   } satisfies AnalisarResponse);
 }
