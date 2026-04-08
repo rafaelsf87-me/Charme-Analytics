@@ -24,7 +24,7 @@ export default async function HomPage() {
       </header>
 
       {/* Conteúdo */}
-      <main className="flex flex-1 flex-col items-center justify-center px-6 py-6">
+      <main className="flex flex-1 flex-col items-center justify-start px-6 pt-10 pb-6">
         <div className="mb-6 text-center">
           <Image
             src="/logo.png"
@@ -37,7 +37,7 @@ export default async function HomPage() {
           <p className="mt-0.5 text-sm text-zinc-500">Escolha uma ferramenta para começar</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-4xl">
           {/* Card 1 — Central de Dados */}
           <Link href="/chat" className="group">
             <div className="flex flex-col h-full bg-white border border-charme-border rounded-xl p-6 shadow-sm transition-all hover:shadow-md hover:border-charme/30 cursor-pointer">
