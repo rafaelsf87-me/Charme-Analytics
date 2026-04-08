@@ -78,7 +78,7 @@ As categorias têm hierarquia: algumas são genéricas (ex: "Qualidade Ruim") e 
 ### Não Recebi (atraso)
 Cliente não recebeu o produto ou houve atraso significativo na entrega.
 Palavras-chave: não recebi, não chegou, nunca entregue, atraso, não foi entregue, até agora nada, código de rastreio, não entregaram
-Exemplos: "Não recebi meu produto." / "Até agora eu não recebi." / "Nunca foi entregue"
+Exemplos: "Não recebi meu produto." / "Até agora eu não recebi." / "Nunca foi entregue" / "Até agora eu não recebi. Eu pedi dia 27 e até agora nada."
 
 ### Qualidade Ruim
 Insatisfação genérica com qualidade quando NÃO é possível identificar o subtipo específico. Use esta SÓ quando o texto não permite classificar nas subcategorias abaixo.
@@ -102,13 +102,13 @@ Exemplos: "Furou na primeira semana" / "Já está toda desfiando, não tem prote
 
 ### Qualidade Ruim - Escorrega
 Capa não fica fixa, escorrega, sai do lugar.
-Palavras-chave: escorrega, escorregando, não fixa, fica saindo, sai do lugar, não prendeu, solta
-Exemplos: "Fica escorregando o tempo todo, enruga tudo no sofá" / "Ela fica saindo do sofá" / "Não fixou, já devolvi"
+Palavras-chave: escorrega, escorregando, não fixa, fica saindo, sai do lugar, não prendeu, solta, não fica presa, saindo
+Exemplos: "Fica escorregando o tempo todo, enruga tudo no sofá" / "Ela fica saindo do sofá" / "Não fixou, já devolvi" / "Não fica presa no sofá: Fica saindo, escorrega."
 
 ### Não Serviu
 Genérico — capa não serviu no móvel, sem especificar se é grande ou pequena. Use SÓ quando o texto não permite classificar se ficou grande ou pequena.
-Palavras-chave: não serviu, não encaixou, não coube (sem dizer se é grande/pequena), não vestiu
-Exemplos: "Não encaixou na minha cadeira." / "A capa não deu certo"
+Palavras-chave: não serviu, não encaixou, não coube (sem dizer se é grande/pequena), não vestiu, não se encaixa, padronagem diferente e não encaixa
+Exemplos: "Não encaixou na minha cadeira." / "A capa não deu certo" / "A capa de 2 lugares e a de 3 vieram com padronagem diferente e não se encaixam em qualquer modelo de sofá" — mesmo com menção a devolução/reembolso, o problema principal é encaixe → "Não Serviu"
 
 ### Não Serviu - Pequeno
 Capa ficou pequena, apertada, curta, não coube.
@@ -117,8 +117,8 @@ Exemplos: "Ficaram pequenas e minhas cadeiras são padrão" / "Veio pequena, fiz
 
 ### Não Serviu - Grande
 Capa ficou grande, solta, sobrando, folgada.
-Palavras-chave: grande, solta, folgada, imensa, sobrando, enorme, larga demais
-Exemplos: "A capa ficou muito solta no sofá" / "Ficou imensa, sobrando" / "Grande, não é ajustável."
+Palavras-chave: grande, solta, folgada, imensa, sobrando, enorme, larga demais, muito solta
+Exemplos: "A capa ficou muito solta no sofá" / "Ficou imensa, sobrando" / "Grande, não é ajustável." / "A capa ficou muito solta no sofá"
 
 ### Cor Errada
 Cor recebida diferente da comprada ou variação de cor entre unidades do mesmo pedido.
@@ -128,7 +128,7 @@ Exemplos: "A cor recebida foi marrom, não veio verde oliva." / "Pedi 6 capas ig
 ### Produto Errado
 Recebeu produto/tamanho/modelo diferente do comprado — não é cor, é o item em si.
 Palavras-chave: capa errada, veio errada, errado, 2 lugares ao invés de 3, produto trocado, mandaram outro
-Exemplos: "Recebi uma capa de 2 lugares ao invés de 3" / "Veio a capa errada"
+Exemplos: "Recebi uma capa de 2 lugares ao invés de 3" / "Veio a capa errada" / "A capa veio errada. Estou aguardando meu reembolso, pois já devolvi." — menção a devolução/reembolso não muda a categoria, classifique pelo problema do produto
 
 ### Não é Impermeável
 Prometido como impermeável mas não protege contra líquidos.
@@ -160,16 +160,17 @@ Exemplos: "Não posso avaliar pois o material foi devolvido" / "Loja não respon
 ## REGRAS DE DECISÃO
 
 1. Use SEMPRE o nome EXATO da categoria — nunca crie variações
-2. Quando houver múltiplos problemas, classifique pelo PRIMEIRO problema mencionado no texto
+2. Quando houver múltiplos problemas, classifique pelo PRIMEIRO problema mencionado no texto. Exemplo: "não serviu nas minhas cadeiras... essas fininhas não deu" → o primeiro problema é tamanho/encaixe ("não serviu"), ignore a menção ao tecido como justificativa → "Não Serviu"
 3. Específica > Genérica: se o texto permite o subtipo, use o subtipo
-4. "Cor Errada" cobre qualquer situação de cor incorreta — NÃO use "Produto Errado" para cor
-5. "Produto Errado" = modelo/tamanho/tipo errado (não cor)
-6. "Qualidade Ruim - Escorrega" = capa escorrega do móvel; "Não Serviu - Grande" = tamanho folgado
+4. "Cor Errada" cobre qualquer situação de cor incorreta — NÃO use "Produto Errado" para cor. Inclui: "pedido veio errado, cores diferentes", "mandaram 5 de uma cor e 3 de outra", "recebi cores misturadas" → SEMPRE "Cor Errada"
+5. "Produto Errado" = modelo/tamanho/tipo errado (ex: pediu 3 lugares, veio de 2). NUNCA para cor. Textos curtos como "veio a capa errada", "capa errada", "veio errado" sem menção a cor → sempre "Produto Errado"
+6. "Qualidade Ruim - Escorrega" = capa escorrega/sai do lugar durante uso; "Não Serviu - Grande" = capa ficou fisicamente grande/solta/folgada para o móvel. "Ficou muito solta no sofá" = tamanho → "Não Serviu - Grande"
 7. Entrega atrasada ou rastreamento inexistente → "Não Recebi (atraso)"
 8. Gato/pet rasgou/furou → "Qualidade Ruim - Rasgou"
 9. Atendimento ruim como problema secundário → classificar pelo problema de produto
-10. Nunca deixar sem categoria — se nada se encaixa, usar "Outros / Genérico"
-11. Responda APENAS JSON, sem markdown, sem preamble
+10. Menção a devolução, reembolso ou troca NÃO muda a categoria — classifique sempre pelo problema do produto que motivou a devolução
+11. Nunca deixar sem categoria — se nada se encaixa, usar "Outros / Genérico"
+12. Responda APENAS JSON, sem markdown, sem preamble
 
 ## Formato de resposta:
 [
