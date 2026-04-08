@@ -1,59 +1,25 @@
 // ─── Fase 1: Listar e Classificar Pedidos ────────────────────────────────────
 // Busca TODOS os pedidos do período (sem filtro de status), classifica pelo
-// idSituacao no backend, retorna IDs agrupados por desfecho.
+// nome da situação (campo situacao.value) — não requer escopo extra no Bling.
 
 import { blingFetch } from '@/lib/bling-auth';
 import { NextResponse } from 'next/server';
 
-// Cache em memória para IDs de situações (evita re-fetch a cada análise)
-interface SituacaoIds {
-  verificado: number;
-  devolucao: number;
-  cancelado: number;
-  emTroca: number;
-}
-let situacaoCache: SituacaoIds | null = null;
-
-// Módulo de pedidos de venda no Bling
-const MODULO_PEDIDOS_VENDA = 6;
-
-async function getSituacaoIds(): Promise<SituacaoIds> {
-  if (situacaoCache) return situacaoCache;
-
-  const data = await blingFetch(`/situacoes/modulos/${MODULO_PEDIDOS_VENDA}`) as {
-    data?: Array<{ id: number; nome: string }>;
-  };
-
-  const situacoes: Array<{ id: number; nome: string }> = data?.data ?? [];
-
-  function findId(nomes: string[]): number {
-    const lower = nomes.map(n => n.toLowerCase());
-    const found = situacoes.find(s =>
-      lower.some(n => s.nome.toLowerCase().includes(n))
-    );
-    return found?.id ?? -1;
-  }
-
-  situacaoCache = {
-    verificado: findId(['verificado']),
-    devolucao:  findId(['devolução', 'devolucao']),
-    cancelado:  findId(['cancelado']),
-    emTroca:    findId(['em troca', 'troca']),
-  };
-
-  return situacaoCache;
+function classificar(nome: string): 'vendido' | 'devolvido' | 'cancelado' | 'emTroca' | 'ignorar' {
+  const n = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (n.includes('verificado'))          return 'vendido';
+  if (n.includes('devolucao') || n.includes('devolvido')) return 'devolvido';
+  if (n.includes('cancelado'))           return 'cancelado';
+  if (n.includes('troca'))               return 'emTroca';
+  return 'ignorar';
 }
 
-interface PedidoResumo {
-  id: number;
-  idSituacao: number;
-}
+async function listarTodosPedidos(dateFrom: string, dateTo: string) {
+  const vendidos:   number[] = [];
+  const devolvidos: number[] = [];
+  const cancelados: number[] = [];
+  let descartados = 0;
 
-async function listarTodosPedidos(
-  dateFrom: string,
-  dateTo: string
-): Promise<PedidoResumo[]> {
-  const todos: PedidoResumo[] = [];
   let pagina = 1;
   const limite = 100;
 
@@ -66,24 +32,32 @@ async function listarTodosPedidos(
     });
 
     const data = await blingFetch(`/pedidos/vendas?${params}`) as {
-      data?: Array<{ id: number; situacao?: { id: number } }>;
+      data?: Array<{ id: number; situacao?: { valor?: string; nome?: string } }>;
     };
 
     const items = data?.data ?? [];
     if (items.length === 0) break;
 
     for (const p of items) {
-      todos.push({ id: p.id, idSituacao: p.situacao?.id ?? -1 });
+      // Bling v3 retorna situacao.valor ou situacao.nome — aceitar ambos
+      const nomeSit = (p.situacao?.valor ?? p.situacao?.nome ?? '').toString();
+      const tipo = classificar(nomeSit);
+
+      if (tipo === 'vendido')    vendidos.push(p.id);
+      else if (tipo === 'devolvido')  devolvidos.push(p.id);
+      else if (tipo === 'cancelado')  cancelados.push(p.id);
+      else if (tipo === 'emTroca')    descartados++;
+      // 'ignorar' → status desconhecido, pular silenciosamente
     }
 
     if (items.length < limite) break;
     pagina++;
 
-    // Rate limit: 3 req/s → aguardar ~350ms entre páginas
+    // Rate limit: 3 req/s
     await new Promise(r => setTimeout(r, 350));
   }
 
-  return todos;
+  return { vendidos, devolvidos, cancelados, descartados };
 }
 
 export async function POST(req: Request) {
@@ -98,28 +72,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const [ids, pedidos] = await Promise.all([
-      getSituacaoIds(),
-      listarTodosPedidos(dateFrom, dateTo),
-    ]);
-
-    const vendidos: number[]   = [];
-    const devolvidos: number[] = [];
-    const cancelados: number[] = [];
-    let descartados = 0;
-
-    for (const p of pedidos) {
-      if (p.idSituacao === ids.verificado) {
-        vendidos.push(p.id);
-      } else if (p.idSituacao === ids.devolucao) {
-        devolvidos.push(p.id);
-      } else if (p.idSituacao === ids.cancelado) {
-        cancelados.push(p.id);
-      } else if (p.idSituacao === ids.emTroca) {
-        descartados++;
-      }
-      // Demais status desconhecidos: ignorar silenciosamente
-    }
+    const { vendidos, devolvidos, cancelados, descartados } =
+      await listarTodosPedidos(dateFrom, dateTo);
 
     return NextResponse.json({
       vendidos,
