@@ -21,23 +21,23 @@ function ResumoConsolidado({ resumoGlobal, totalNegativas, totalProdutos }: {
   totalNegativas: number;
   totalProdutos: number;
 }) {
-  const top5 = Object.entries(resumoGlobal)
+  const top6 = Object.entries(resumoGlobal)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+    .slice(0, 6);
 
-  if (top5.length === 0) return null;
+  if (top6.length === 0) return null;
 
-  const top5Sum = top5.reduce((s, [, q]) => s + q, 0);
-  const demaisQtd = totalNegativas - top5Sum;
-  const max = top5[0][1];
+  const top6Sum = top6.reduce((s, [, q]) => s + q, 0);
+  const demaisQtd = totalNegativas - top6Sum;
+  const max = top6[0][1];
 
   return (
     <div className="bg-white border border-charme-border rounded-xl shadow-sm p-5 mb-5">
       <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-4">
-        Top 5 Reclamações — Todos os Produtos
+        Top 6 Reclamações — Todos os Produtos
       </p>
       <div className="space-y-3">
-        {top5.map(([cat, qtd], i) => {
+        {top6.map(([cat, qtd], i) => {
           const pct = totalNegativas > 0 ? (qtd / totalNegativas) * 100 : 0;
           const barPct = max > 0 ? (qtd / max) * 100 : 0;
           const isPositiva = cat === 'Avaliação Positiva';

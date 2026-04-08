@@ -14,12 +14,19 @@ export interface ReviewInput {
 
 export type TipoProblema = 'produto' | 'logistica' | 'outro' | 'positiva';
 
+export interface SubCategoria {
+  nome: string;
+  quantidade: number;
+  textos: string[];
+}
+
 export interface ProblemaResultado {
   categoria: string;
   quantidade: number;
   percentual: number;
   tipo: TipoProblema;
   textos: string[]; // textos completos das reviews nesta categoria
+  subcategorias: SubCategoria[]; // breakdown por subcategoria quando agrupado
 }
 
 export interface ProdutoResultado {
@@ -60,8 +67,8 @@ const ROLLUP_PARENT: Record<string, string> = {
 // Categorias de logística — aparecem em cinza no card
 const CATEGORIAS_LOGISTICA = new Set([
   'Não Recebi (atraso)',
-  'Produto Errado',
   'Pedido Faltando Peça',
+  // 'Produto Errado' removido — deve aparecer em preto como problema de produto
 ]);
 
 // Categorias genéricas — aparecem em cinza claro
@@ -97,9 +104,9 @@ Palavras-chave: tecido fino, tecido fraco, tecido brilhante, tecido plástico, m
 Exemplos: "Tecido muito fino. Não protegerá em nada minhas cadeiras." / "Péssimo acabamento! Tecido brilhante!!!!" / "Não gostei muito: Não gostei muito, porque o tecido é muito fino, pelo anuncio o tecido era mais grosso!" → "Qualidade Ruim - Tecido"
 
 ### Qualidade Ruim - Costura
-Problemas com costura, acabamento, fita de ajuste, peças descosturadas, capas que ficam tortas.
-Palavras-chave: costura, descosturada, mal acabada, fita arrebentou, costurada torto, acabamento ruim, falha na costura, tortas, ficam tortas, ficam tortos, mal feitas, não estão bem feitas
-Exemplos: "Duas capas vieram com falha na costura" / "Uma delas veio descosturada na lateral e costurada tudo torto" / "A fita de ajuste arrebentou." / "DESCONTENTE: JÁ TINHA COMPRADO CAPAS DE VOCES, PORÉM ESTAS NÃO ESTÃO BEM FEITAS, FICAM TORTAS NAS CADEIRAS, DESTA VEZ NÃO GOSTEI!" → "Qualidade Ruim - Costura"
+Problemas com costura, acabamento, fita de ajuste, peças descosturadas, capas que ficam tortas, acabamento que deixou a desejar, tecido escapando ou amontoado.
+Palavras-chave: costura, descosturada, mal acabada, fita arrebentou, costurada torto, acabamento ruim, falha na costura, tortas, ficam tortas, ficam tortos, mal feitas, não estão bem feitas, acabamento deixou a desejar, escapando tecido, amontoado de tecido, repasse não feito, pontos soltos
+Exemplos: "Duas capas vieram com falha na costura" / "Uma delas veio descosturada na lateral e costurada tudo torto" / "A fita de ajuste arrebentou." / "DESCONTENTE: JÁ TINHA COMPRADO CAPAS DE VOCES, PORÉM ESTAS NÃO ESTÃO BEM FEITAS, FICAM TORTAS NAS CADEIRAS, DESTA VEZ NÃO GOSTEI!" → "Qualidade Ruim - Costura" / "Pontuando: O tecido é muito bom, porém o acabamento deixou a desejar. Costura torta, escapando tecido, amontoado de tecidos em determinados pontos, e repasse não feito em algumas peças." → "Qualidade Ruim - Costura" (o problema principal declarado é o acabamento/costura)
 
 ### Qualidade Ruim - Rasgou
 Produto rasgou, furou, desfiou ou soltou fios em pouco tempo de uso.
@@ -132,9 +139,9 @@ Palavras-chave: cor errada, cor diferente, não é a cor, veio outra cor, cores 
 Exemplos: "A cor recebida foi marrom, não veio verde oliva." / "Pedi 6 capas iguais. Recebi 4 de uma cor e 2 de outra."
 
 ### Produto Errado
-Recebeu produto/tamanho/modelo diferente do comprado — não é cor, é o item em si.
-Palavras-chave: capa errada, veio errada, errado, 2 lugares ao invés de 3, produto trocado, mandaram outro
-Exemplos: "Recebi uma capa de 2 lugares ao invés de 3" / "Veio a capa errada" / "A capa veio errada. Estou aguardando meu reembolso, pois já devolvi." — menção a devolução/reembolso não muda a categoria, classifique pelo problema do produto
+Recebeu produto/tamanho/modelo diferente do comprado — não é cor, é o item em si. Inclui envio do número errado de lugares (ex: pediu 3 lugares, enviaram 1 ou 2).
+Palavras-chave: capa errada, veio errada, errado, 2 lugares ao invés de 3, produto trocado, mandaram outro, enviaram de um lugar, de três lugares enviaram, fui lesado (quando causa é produto errado)
+Exemplos: "Recebi uma capa de 2 lugares ao invés de 3" / "Veio a capa errada" / "A capa veio errada. Estou aguardando meu reembolso, pois já devolvi." — menção a devolução/reembolso não muda a categoria / "Encomendei uma capa para sofá de três lugares: Encomendei uma capa para sofá de três lugares, enviaram de um lugar. Reclamei, não obtive resposta. Fui lesado." → "Produto Errado" (o problema é ter recebido item diferente do pedido)
 
 ### Não é Impermeável
 Prometido como impermeável mas não protege contra líquidos.
@@ -162,10 +169,10 @@ Palavras-chave: 1 unidade, achei que era par, pensei que vinham mais, site confu
 Exemplos: "Deveriam deixar mais explícito no site que é apenas 1 unidade"
 
 ### Avaliação Positiva
-SOMENTE quando o comentário é 100% positivo/elogio, mesmo com rating baixo (1-3 estrelas). Indica erro do cliente ao dar a nota.
-Palavras-chave: amei, gostei, ótimo, excelente, ficou ótimo, muito bom, adorei, recomendo, qualidade boa, superou expectativas, lindo, bonito, chegou rápido e perfeito, estou satisfeito
-Exemplos: "Amei o produto! Chegou bem embalado e qualidade ótima." / "Gostei muito, recomendo!"
-ATENÇÃO: Use SOMENTE quando NÃO há qualquer reclamação no texto. Se houver qualquer problema mencionado, classifique pelo problema.
+Quando o comentário é predominantemente positivo, mesmo com rating baixo (1-3 estrelas). Inclui casos onde o cliente ficou satisfeito com o produto mas menciona um detalhe menor (cor, decoração pessoal, etc.) sem reclamar de defeito ou problema real.
+Palavras-chave: gostei, amei, ótimo, excelente, ficou ótimo, muito bom, adorei, recomendo, qualidade boa, superou expectativas, lindo, bonito, chegou rápido e perfeito, estou satisfeito, atendeu minhas expectativas, produto bom
+Exemplos: "Amei o produto! Chegou bem embalado e qualidade ótima." / "Gostei muito, recomendo!" / "Gostei: Produto bom. Atendeu minhas expectativas. Só não gostei da cor na minha sala. A cinza que comprei combinou mais com a decoração" → "Avaliação Positiva" (satisfação com o produto, comentário de decoração pessoal não é defeito) / "Produto bonito, chegou rápido, recomendo."
+ATENÇÃO: Use quando o tom geral é de satisfação. Queixas de decoração/estética pessoal ("não combinou com minha sala") sem mencionar defeito não desqualificam.
 
 ### Outros / Genérico
 Usar APENAS quando o texto não se encaixa em nenhuma categoria acima. Inclui: pós-venda ruim sem outro problema, avaliação sem informação útil, devolveu sem explicar motivo.
@@ -211,10 +218,12 @@ function buildUserMessage(batch: ReviewInput[], offset: number): string {
 function formatTexto(rev: ReviewInput): string {
   const body = rev.body?.trim();
   const title = rev.title?.trim();
-  if (body && title && body.toLowerCase() !== title.toLowerCase()) {
-    return `${title}: ${body}`;
-  }
-  return body || title || '(sem texto)';
+  if (!body) return title || '(sem texto)';
+  if (!title) return body;
+  // Evita repetição quando o body já começa com o título (padrão Judge.me)
+  if (body.toLowerCase().startsWith(title.toLowerCase())) return body;
+  if (body.toLowerCase() === title.toLowerCase()) return body;
+  return `${title}: ${body}`;
 }
 
 interface ClassificacaoItem {
@@ -381,20 +390,32 @@ export async function POST(request: NextRequest) {
     const textos_outros: string[] = [];
     let outros = 0;
 
-    // Rollup: subcategorias abaixo do mínimo sobem para o pai
-    const consolidated = new Map<string, { quantidade: number; tipo: TipoProblema; textos: string[] }>();
+    // Rollup SEMPRE: subcategorias sobem para o pai, rastreando o breakdown
+    type GroupEntry = { quantidade: number; tipo: TipoProblema; textos: string[]; subs: Map<string, { quantidade: number; textos: string[] }> };
+    const grouped = new Map<string, GroupEntry>();
+
     for (const [cat, data] of conteudo.entries()) {
-      const parent = data.quantidade < MIN_OCORRENCIAS ? (ROLLUP_PARENT[cat] ?? cat) : cat;
-      const existing = consolidated.get(parent);
-      if (existing) {
-        existing.quantidade += data.quantidade;
-        existing.textos.push(...data.textos);
-      } else {
-        consolidated.set(parent, { quantidade: data.quantidade, tipo: inferirTipo(parent), textos: [...data.textos] });
+      const parent = ROLLUP_PARENT[cat] ?? cat; // sempre usa o pai se existir
+      if (!grouped.has(parent)) {
+        grouped.set(parent, { quantidade: 0, tipo: inferirTipo(parent), textos: [], subs: new Map() });
+      }
+      const g = grouped.get(parent)!;
+      g.quantidade += data.quantidade;
+      g.textos.push(...data.textos);
+      // Se é subcategoria (cat !== parent), rastreia o breakdown
+      if (cat !== parent) {
+        if (!g.subs.has(cat)) g.subs.set(cat, { quantidade: 0, textos: [] });
+        const s = g.subs.get(cat)!;
+        s.quantidade += data.quantidade;
+        s.textos.push(...data.textos);
       }
     }
 
-    for (const [cat, { quantidade, tipo, textos }] of consolidated.entries()) {
+    for (const [cat, { quantidade, tipo, textos, subs }] of grouped.entries()) {
+      const subcategorias: SubCategoria[] = [...subs.entries()]
+        .map(([nome, { quantidade: q, textos: t }]) => ({ nome, quantidade: q, textos: t }))
+        .sort((a, b) => b.quantidade - a.quantidade);
+
       if (quantidade >= MIN_OCORRENCIAS) {
         problemas.push({
           categoria: cat,
@@ -402,6 +423,7 @@ export async function POST(request: NextRequest) {
           percentual: (quantidade / totalNeg) * 100,
           tipo,
           textos,
+          subcategorias,
         });
       } else {
         outros += quantidade;
@@ -409,11 +431,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Ordenar: produto → logistica → outro → positiva
-    const ordemTipo: Record<TipoProblema, number> = { produto: 0, logistica: 1, outro: 2, positiva: 3 };
+    // Ordenar: produto (qty desc) → outro → logistica (exceto Não Recebi) → Não Recebi → positiva
+    function ordemProblema(p: ProblemaResultado): number {
+      if (p.tipo === 'positiva') return 4;
+      if (p.categoria === 'Não Recebi (atraso)') return 3;
+      if (p.tipo === 'logistica') return 2;
+      if (p.tipo === 'outro') return 1;
+      return 0; // produto
+    }
     problemas.sort((a, b) => {
-      const dt = ordemTipo[a.tipo] - ordemTipo[b.tipo];
-      return dt !== 0 ? dt : b.quantidade - a.quantidade;
+      const diff = ordemProblema(a) - ordemProblema(b);
+      return diff !== 0 ? diff : b.quantidade - a.quantidade;
     });
 
     produtos.push({
