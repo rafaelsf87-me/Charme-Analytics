@@ -39,7 +39,7 @@ function valueClass(tipo: TipoProblema): string {
 
 // ─── Tooltip de avaliações ──────────────────────────────────────────────────────
 
-function InfoTooltip({ textos, subcategorias, total }: { textos: string[]; subcategorias: SubCategoria[]; total: number }) {
+export function InfoTooltip({ textos, subcategorias, total }: { textos: string[]; subcategorias: SubCategoria[]; total: number }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

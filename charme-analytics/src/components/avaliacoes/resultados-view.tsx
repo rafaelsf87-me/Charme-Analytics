@@ -7,8 +7,9 @@ import * as XLSX from 'xlsx';
 import { UploadForm, type ParsedData } from './upload-form';
 import { ProcessingStatus } from './processing-status';
 import { ProdutoCard } from './produto-card';
-import type { AnalisarResponse, ProdutoResultado } from '@/app/api/avaliacoes/analisar/route';
+import type { AnalisarResponse, ProdutoResultado, ProblemaResultado, SubCategoria, TipoProblema } from '@/app/api/avaliacoes/analisar/route';
 import type { ProdutoImagem } from '@/app/api/avaliacoes/imagens/route';
+import { InfoTooltip } from './produto-card';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,226 @@ function ResumoConsolidado({ resumoGlobal, totalNegativas, totalProdutos }: {
   );
 }
 
+// ─── Classificação por tipo de produto ────────────────────────────────────────
+
+interface TipoProdutoAgregado {
+  nome: string;
+  nomes_produtos: string[];
+  total_negativas: number;
+  total_reviews: number;
+  problemas: ProblemaResultado[];
+}
+
+function norm(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function hasAll(title: string, ...words: string[]): boolean {
+  const t = norm(title);
+  return words.every(w => t.includes(norm(w)));
+}
+
+const REGRAS_TIPO: { nome: string; match: (t: string) => boolean }[] = [
+  // Ordem importa: mais específicos primeiro
+  { nome: 'CAPA SOFÁ ELASTEX RETRÁTIL',  match: t => hasAll(t, 'sofa', 'retratil', 'elastex') },
+  { nome: 'PROTETOR SOFÁ RETRÁTIL',      match: t => hasAll(t, 'protetor', 'sofa', 'retratil') },
+  { nome: 'PROTETOR SOFÁ PADRÃO',        match: t => hasAll(t, 'protetora', 'sofa') },
+  { nome: 'CAPAS SOFÁS ANTI ARRANHÃO',   match: t => hasAll(t, 'sofa', 'anti', 'arranhao') },
+  { nome: 'CAPAS SOFÁS DROP',            match: t => hasAll(t, 'sofa', 'special') },
+  { nome: 'CAPAS SOFÁS ELASTEX',         match: t => hasAll(t, 'sofa', 'elastex') },
+  { nome: 'CAPAS CADEIRAS ACOLCHOADAS',  match: t => hasAll(t, 'cadeira', 'acolchoada') || hasAll(t, 'cadeira', 'duo') },
+  { nome: 'CAPAS CADEIRAS CONFORT',      match: t => hasAll(t, 'cadeira', 'confort') },
+  { nome: 'CAPAS CADEIRA SUEDE PROTEX',  match: t => hasAll(t, 'cadeira', 'suede') },
+  { nome: 'CAPAS CADEIRAS IMPERMEÁVEIS', match: t => hasAll(t, 'cadeira', 'deluxe') },
+  { nome: 'CAPAS CADEIRAS BOUTIQUE',     match: t => hasAll(t, 'cadeira', 'boutique') },
+  { nome: 'CAPAS CADEIRAS ELASTEX',      match: t => hasAll(t, 'cadeira', 'elastex') },
+];
+
+function getTipoProduto(titulo: string): string {
+  for (const regra of REGRAS_TIPO) {
+    if (regra.match(titulo)) return regra.nome;
+  }
+  return '__outras__';
+}
+
+function agregarPorTipo(
+  produtos: ProdutoResultado[],
+  imagens: Map<string, ProdutoImagem>
+): { grupos: TipoProdutoAgregado[]; outras: string[] } {
+  type Acc = {
+    nomes: string[];
+    neg: number;
+    rev: number;
+    probs: Map<string, { quantidade: number; tipo: TipoProblema; textos: string[]; subs: Map<string, { quantidade: number; textos: string[] }> }>;
+  };
+
+  const map = new Map<string, Acc>();
+  const outras: string[] = [];
+
+  for (const p of produtos) {
+    const img = imagens.get(p.product_handle);
+    const titulo = img?.title && img.title !== img.handle
+      ? img.title
+      : p.product_handle.replace(/-/g, ' ');
+    const tipo = getTipoProduto(titulo);
+
+    if (tipo === '__outras__') { outras.push(titulo); continue; }
+
+    if (!map.has(tipo)) map.set(tipo, { nomes: [], neg: 0, rev: 0, probs: new Map() });
+    const g = map.get(tipo)!;
+    g.nomes.push(titulo);
+    g.neg += p.total_negativas;
+    g.rev += p.total_reviews;
+
+    for (const prob of p.problemas) {
+      if (!g.probs.has(prob.categoria)) {
+        g.probs.set(prob.categoria, { quantidade: 0, tipo: prob.tipo, textos: [], subs: new Map() });
+      }
+      const gp = g.probs.get(prob.categoria)!;
+      gp.quantidade += prob.quantidade;
+      gp.textos.push(...prob.textos);
+      for (const sub of prob.subcategorias) {
+        if (!gp.subs.has(sub.nome)) gp.subs.set(sub.nome, { quantidade: 0, textos: [] });
+        const gs = gp.subs.get(sub.nome)!;
+        gs.quantidade += sub.quantidade;
+        gs.textos.push(...sub.textos);
+      }
+    }
+  }
+
+  function ordemP(p: ProblemaResultado): number {
+    if (p.tipo === 'positiva') return 4;
+    if (p.categoria === 'Não Recebi (atraso)') return 3;
+    if (p.tipo === 'logistica') return 2;
+    if (p.tipo === 'outro') return 1;
+    return 0;
+  }
+
+  const grupos: TipoProdutoAgregado[] = [];
+  for (const regra of REGRAS_TIPO) {
+    const g = map.get(regra.nome);
+    if (!g || g.neg === 0) continue;
+    const totalNeg = g.neg;
+
+    const problemas: ProblemaResultado[] = [...g.probs.entries()].map(([cat, data]) => ({
+      categoria: cat,
+      quantidade: data.quantidade,
+      percentual: totalNeg > 0 ? (data.quantidade / totalNeg) * 100 : 0,
+      tipo: data.tipo,
+      textos: data.textos,
+      subcategorias: ([...data.subs.entries()]
+        .map(([nome, s]): SubCategoria => ({ nome, quantidade: s.quantidade, textos: s.textos }))
+        .sort((a, b) => b.quantidade - a.quantidade)),
+    })).sort((a, b) => {
+      const diff = ordemP(a) - ordemP(b);
+      return diff !== 0 ? diff : b.quantidade - a.quantidade;
+    });
+
+    grupos.push({ nome: regra.nome, nomes_produtos: g.nomes, total_negativas: g.neg, total_reviews: g.rev, problemas });
+  }
+
+  return { grupos, outras };
+}
+
+// ─── TipoCard ─────────────────────────────────────────────────────────────────
+
+function tipoBarColor(tipo: TipoProblema): string {
+  if (tipo === 'positiva') return '#16a34a';
+  if (tipo === 'logistica') return '#a1a1aa';
+  if (tipo === 'outro') return '#d4d4d8';
+  return '#553679';
+}
+
+function tipoLabelClass(tipo: TipoProblema): string {
+  if (tipo === 'positiva') return 'text-green-600 font-medium';
+  if (tipo === 'logistica' || tipo === 'outro') return 'text-zinc-400';
+  return 'text-zinc-700 font-medium';
+}
+
+function tipoValueClass(tipo: TipoProblema): string {
+  if (tipo === 'positiva') return 'text-green-500';
+  if (tipo === 'logistica' || tipo === 'outro') return 'text-zinc-400';
+  return 'text-zinc-500';
+}
+
+function TipoCard({ grupo }: { grupo: TipoProdutoAgregado }) {
+  const maxQtd = grupo.problemas
+    .filter(p => p.tipo === 'produto')
+    .reduce((m, p) => Math.max(m, p.quantidade), 1);
+
+  return (
+    <div className="bg-white border border-charme-border rounded-xl shadow-sm">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-zinc-100 bg-charme/[0.03] rounded-t-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-xs font-bold text-charme uppercase tracking-wide leading-snug">
+              {grupo.nome}
+            </h3>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+              <span className="text-xs text-zinc-500">
+                <span className="font-medium text-zinc-700">{grupo.nomes_produtos.length}</span> produto{grupo.nomes_produtos.length !== 1 ? 's' : ''}
+              </span>
+              <span className="text-xs text-zinc-400">·</span>
+              <span className="text-xs text-red-500 font-medium">
+                {grupo.total_negativas} negativas
+              </span>
+            </div>
+          </div>
+          {/* Lista de produtos incluídos */}
+          <InfoTooltip
+            textos={grupo.nomes_produtos}
+            subcategorias={[]}
+            total={grupo.nomes_produtos.length}
+          />
+        </div>
+      </div>
+
+      {/* Problemas */}
+      <div className="p-5">
+        {grupo.problemas.length === 0 ? (
+          <p className="text-xs text-zinc-400 italic">Nenhum problema recorrente consolidado.</p>
+        ) : (
+          <>
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">
+              Principais Problemas
+            </p>
+            <div className="space-y-2.5">
+              {grupo.problemas.map(prob => {
+                const barBase = prob.tipo === 'produto' ? maxQtd : grupo.total_negativas;
+                const barPct = barBase > 0 ? (prob.quantidade / barBase) * 100 : 0;
+                return (
+                  <div key={prob.categoria}>
+                    <div className="flex items-center justify-between mb-1 gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {prob.tipo === 'logistica' && (
+                          <span className="text-[9px] text-zinc-400 border border-zinc-200 rounded px-1 shrink-0">logística</span>
+                        )}
+                        <span className={`text-xs truncate ${tipoLabelClass(prob.tipo)}`}>{prob.categoria}</span>
+                        <InfoTooltip textos={prob.textos} subcategorias={prob.subcategorias} total={prob.quantidade} />
+                      </div>
+                      <span className={`text-xs tabular-nums shrink-0 ${tipoValueClass(prob.tipo)}`}>
+                        {prob.quantidade}{' '}
+                        <span className="text-zinc-400">({prob.percentual.toFixed(1)}%)</span>
+                      </span>
+                    </div>
+                    <div className="w-full bg-zinc-100 rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full transition-all"
+                        style={{ width: `${barPct}%`, backgroundColor: tipoBarColor(prob.tipo) }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Export ────────────────────────────────────────────────────────────────────
 
 function exportarXlsx(produtos: ProdutoResultado[], imagens: Map<string, ProdutoImagem>) {
@@ -143,6 +364,7 @@ export function AvaliacoesView() {
   const [errosApi, setErrosApi] = useState<string[]>([]);
   const [busca, setBusca] = useState('');
   const [resumoGlobal, setResumoGlobal] = useState<Record<string, number>>({});
+  const [viewMode, setViewMode] = useState<'produto' | 'tipo'>('produto');
 
   async function handleConfirm(data: ParsedData) {
     setParsedData(data);
@@ -217,6 +439,7 @@ export function AvaliacoesView() {
     setErrosApi([]);
     setBusca('');
     setResumoGlobal({});
+    setViewMode('produto');
   }
 
   // Top 40 para o dashboard (resumo usa todos)
@@ -232,6 +455,12 @@ export function AvaliacoesView() {
       return nome.toLowerCase().includes(q) || p.product_handle.toLowerCase().includes(q);
     });
   }, [top40, imagens, busca]);
+
+  // Agrupamento por tipo (usa TODOS os produtos, não só top 40)
+  const { grupos: tipoGrupos, outras: tipoOutras } = useMemo(
+    () => agregarPorTipo(produtos, imagens),
+    [produtos, imagens]
+  );
 
   // ── Header compartilhado ──────────────────────────────────────────────────
 
@@ -315,21 +544,50 @@ export function AvaliacoesView() {
             <>
               {/* Barra de controles */}
               <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between mb-5">
-                <div className="flex flex-1">
-                  {/* Busca */}
-                  <input
-                    type="text"
-                    placeholder="Buscar produto..."
-                    value={busca}
-                    onChange={e => setBusca(e.target.value)}
-                    className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:border-charme/40 w-full sm:w-64"
-                  />
+                {/* Esquerda: toggle visão + busca (só na visão por produto) */}
+                <div className="flex items-center gap-2 flex-1">
+                  {/* Toggle Por Produto / Por Tipo */}
+                  <div className="flex items-center bg-zinc-100 rounded-lg p-0.5 shrink-0">
+                    <button
+                      onClick={() => setViewMode('produto')}
+                      className={`h-8 px-3 text-xs font-medium rounded-md transition-colors ${
+                        viewMode === 'produto'
+                          ? 'bg-white text-charme shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-700'
+                      }`}
+                    >
+                      Por Produto
+                    </button>
+                    <button
+                      onClick={() => setViewMode('tipo')}
+                      className={`h-8 px-3 text-xs font-medium rounded-md transition-colors ${
+                        viewMode === 'tipo'
+                          ? 'bg-white text-charme shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-700'
+                      }`}
+                    >
+                      Por Tipo
+                    </button>
+                  </div>
+
+                  {/* Busca — só na visão por produto */}
+                  {viewMode === 'produto' && (
+                    <input
+                      type="text"
+                      placeholder="Buscar produto..."
+                      value={busca}
+                      onChange={e => setBusca(e.target.value)}
+                      className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 focus:outline-none focus:border-charme/40 w-full sm:w-56"
+                    />
+                  )}
                 </div>
 
-                {/* Export + resumo */}
+                {/* Direita: contagem + export */}
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-zinc-400">
-                    {produtosFiltrados.length} produto{produtosFiltrados.length !== 1 ? 's' : ''}
+                    {viewMode === 'produto'
+                      ? `${produtosFiltrados.length} produto${produtosFiltrados.length !== 1 ? 's' : ''}`
+                      : `${tipoGrupos.length} tipo${tipoGrupos.length !== 1 ? 's' : ''}`}
                   </span>
                   <button
                     onClick={() => exportarXlsx(produtosFiltrados, imagens)}
@@ -340,28 +598,67 @@ export function AvaliacoesView() {
                 </div>
               </div>
 
-              {/* Resumo consolidado — usa resumo_global (dados brutos da IA, sem filtro MIN_OCORRENCIAS) */}
+              {/* Resumo consolidado — sempre visível */}
               <ResumoConsolidado
                 resumoGlobal={resumoGlobal}
                 totalNegativas={produtos.reduce((s, p) => s + p.total_negativas, 0)}
                 totalProdutos={produtos.length}
               />
 
-              {/* Grid de cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {produtosFiltrados.map(p => (
-                  <ProdutoCard
-                    key={p.product_handle}
-                    produto={p}
-                    imagem={imagens.get(p.product_handle)}
-                  />
-                ))}
-              </div>
+              {/* ── Visão Por Produto ── */}
+              {viewMode === 'produto' && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {produtosFiltrados.map(p => (
+                      <ProdutoCard
+                        key={p.product_handle}
+                        produto={p}
+                        imagem={imagens.get(p.product_handle)}
+                      />
+                    ))}
+                  </div>
+                  {produtosFiltrados.length === 0 && busca && (
+                    <p className="text-center text-sm text-zinc-400 mt-8">
+                      Nenhum produto encontrado para &quot;{busca}&quot;.
+                    </p>
+                  )}
+                </>
+              )}
 
-              {produtosFiltrados.length === 0 && busca && (
-                <p className="text-center text-sm text-zinc-400 mt-8">
-                  Nenhum produto encontrado para &quot;{busca}&quot;.
-                </p>
+              {/* ── Visão Por Tipo ── */}
+              {viewMode === 'tipo' && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {tipoGrupos.map(g => (
+                      <TipoCard key={g.nome} grupo={g} />
+                    ))}
+                  </div>
+
+                  {/* Card "Outros" — produtos sem tipo identificado */}
+                  {tipoOutras.length > 0 && (
+                    <div className="mt-4 bg-white border border-charme-border rounded-xl shadow-sm p-5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">
+                          Outros produtos não classificados
+                        </span>
+                        <InfoTooltip
+                          textos={tipoOutras}
+                          subcategorias={[]}
+                          total={tipoOutras.length}
+                        />
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {tipoOutras.length} produto{tipoOutras.length !== 1 ? 's' : ''} sem combinação de keywords definida
+                      </p>
+                    </div>
+                  )}
+
+                  {tipoGrupos.length === 0 && (
+                    <p className="text-center text-sm text-zinc-400 mt-8">
+                      Nenhum produto correspondeu às categorias de tipo definidas.
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
