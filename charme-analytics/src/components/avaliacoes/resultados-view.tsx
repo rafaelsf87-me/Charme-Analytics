@@ -14,6 +14,64 @@ import type { ProdutoImagem } from '@/app/api/avaliacoes/imagens/route';
 
 type Mode = 'upload' | 'processing' | 'results';
 
+// ─── Resumo consolidado ────────────────────────────────────────────────────────
+
+function ResumoConsolidado({ produtos }: { produtos: ProdutoResultado[] }) {
+  const totalNegativas = produtos.reduce((s, p) => s + p.total_negativas, 0);
+
+  // Somar quantidades por categoria em todos os produtos
+  const contagem = new Map<string, number>();
+  for (const p of produtos) {
+    for (const prob of p.problemas) {
+      contagem.set(prob.categoria, (contagem.get(prob.categoria) ?? 0) + prob.quantidade);
+    }
+  }
+
+  const top3 = [...contagem.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  if (top3.length === 0) return null;
+
+  const max = top3[0][1];
+
+  return (
+    <div className="bg-white border border-charme-border rounded-xl shadow-sm p-5 mb-5">
+      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-4">
+        Top 3 Reclamações — Todos os Produtos
+      </p>
+      <div className="space-y-3">
+        {top3.map(([cat, qtd], i) => {
+          const pct = totalNegativas > 0 ? (qtd / totalNegativas) * 100 : 0;
+          const barPct = max > 0 ? (qtd / max) * 100 : 0;
+          return (
+            <div key={cat}>
+              <div className="flex items-center justify-between mb-1 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[10px] font-bold text-zinc-400 w-4 shrink-0">#{i + 1}</span>
+                  <span className="text-sm font-medium text-zinc-700 truncate">{cat}</span>
+                </div>
+                <span className="text-xs tabular-nums text-zinc-500 shrink-0">
+                  {qtd} <span className="text-zinc-400">({pct.toFixed(1)}%)</span>
+                </span>
+              </div>
+              <div className="w-full bg-zinc-100 rounded-full h-2">
+                <div
+                  className="h-2 rounded-full transition-all"
+                  style={{ width: `${barPct}%`, backgroundColor: '#553679' }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-zinc-400 mt-3">
+        Base: {totalNegativas.toLocaleString('pt-BR')} avaliações negativas em {produtos.length} produto{produtos.length !== 1 ? 's' : ''}
+      </p>
+    </div>
+  );
+}
+
 // ─── Export ────────────────────────────────────────────────────────────────────
 
 function exportarXlsx(produtos: ProdutoResultado[], imagens: Map<string, ProdutoImagem>) {
@@ -256,6 +314,9 @@ export function AvaliacoesView() {
                   </button>
                 </div>
               </div>
+
+              {/* Resumo consolidado */}
+              <ResumoConsolidado produtos={produtosFiltrados} />
 
               {/* Grid de cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
