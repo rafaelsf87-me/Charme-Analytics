@@ -46,59 +46,67 @@ const MIN_OCORRENCIAS = 2;
 
 // Categorias de logística — aparecem em cinza no card
 const CATEGORIAS_LOGISTICA = new Set([
-  'Produto não chegou',
-  'Produto errado enviado',
-  'Pedido incompleto',
-  'Embalagem danificada',
+  'Não Recebi (atraso)',
+  'Produto Errado',
+  'Pedido Faltando Peça',
+]);
+
+// Categorias genéricas — aparecem em cinza claro
+const CATEGORIAS_OUTRO = new Set([
+  'Comprou Errado (problema unidades)',
+  'Outros / Genérico',
 ]);
 
 const SYSTEM_PROMPT = `Você é um analista de qualidade especialista em e-commerce de capas para móveis (cadeiras, sofás, poltronas).
 Recebeu avaliações negativas de clientes. Classifique cada avaliação em UMA categoria padronizada.
 
-## Categorias de PRODUTO (problemas relacionados ao produto em si):
+## Categorias de PRODUTO (problemas com o produto em si):
 
-Tamanho/Encaixe:
-- "Ficou grande" — capa folgada, enrugada, sobrando, não ajusta no móvel, "ficou largo"
-- "Ficou pequeno" — capa não cobriu o móvel, não esticou, ficou justo, "não coube", "menor que o esperado"
+Tamanho / Encaixe:
+- "Não Serviu - Grande" — capa folgada, enrugada, sobrando, ficou largo, muito grande para o móvel
+- "Não Serviu - Pequeno" — capa pequena, não cobriu o móvel, ficou curta, não esticou, menor que o esperado
+- "Não Serviu" — não encaixou / não serviu sem especificar se grande ou pequeno
 
-Qualidade do Material:
-- "Tecido fino / fraco" — material fino, ralo, leve, parece papel, baixa qualidade de tecido
-- "Defeito de costura" — descosturou, costura aberta, veio rasgada, arrebentou na instalação
-- "Rasgou facilmente" — furou, rasgou com uso, gato destruiu em pouco tempo, desfibrou
-- "Não é impermeável" — líquido atravessou, prometia impermeabilidade mas vaza, xixi do pet atravessou
-- "Não fixa / escorrega" — fica saindo, escorrega do sofá/cadeira, não prende, não fica no lugar
-- "Veio manchado" — manchas de mofo, sujeira, produto veio com manchas
+Qualidade:
+- "Qualidade Ruim - Tecido" — material fino, ralo, leve, parece papel, tecido de baixa qualidade
+- "Qualidade Ruim - Costura" — descosturou, costura aberta, veio rasgada na costura, arrebentou na instalação
+- "Qualidade Ruim - Rasgou" — furou, rasgou com uso, gato destruiu em pouco tempo, desfibrou
+- "Qualidade Ruim - Escorrega" — fica saindo do móvel, escorrega, não prende, não fica no lugar
+- "Não é Impermeável" — líquido atravessou, não é impermeável como prometido, xixi do pet atravessou
+- "Qualidade - Manchado" — produto veio com manchas de mofo ou sujeira
+- "Qualidade Ruim" — qualidade abaixo do esperado de forma geral, diferente da propaganda (use apenas quando não há subcategoria específica acima)
 
 Aparência:
-- "Cor diferente da foto" — cor veio diferente do anunciado, tonalidade errada, paleta diferente
-- "Qualidade ruim" — produto abaixo do esperado de forma geral, diferente da propaganda (quando não se enquadra em categoria específica)
+- "Cor Errada" — cor veio diferente do pedido ou do anunciado no site (independente de ser erro de envio ou diferença de paleta)
 
 Funcionalidade:
-- "Difícil de colocar" — processo de encaixe muito difícil, não conseguiu instalar
+- "Dificuldade Utilização" — difícil de colocar, não conseguiu instalar, processo de encaixe impossível
 
 ## Categorias de LOGÍSTICA (problema na entrega, não no produto):
-- "Produto não chegou" — não recebeu, não entregue, extraviado, rastreamento sem atualizações
-- "Produto errado enviado" — enviaram modelo/tamanho/cor diferente do pedido
-- "Pedido incompleto" — faltou peça, veio quantidade menor que a comprada
+- "Não Recebi (atraso)" — não recebeu, não entregue, rastreamento sem atualização, entrega atrasada
+- "Produto Errado" — recebeu modelo/tamanho diferente do pedido (ex: pediu 3 lugares, veio de 2)
+- "Pedido Faltando Peça" — faltou unidade, veio quantidade menor que a comprada, parte do kit não chegou
 
-## Categoria GENÉRICA (quando não é possível identificar um motivo claro):
-- "Insatisfação geral" — reclamação vaga, sem detalhar o problema específico
+## Categorias GENÉRICAS:
+- "Comprou Errado (problema unidades)" — cliente não entendeu que era 1 unidade, comprou o produto errado por própria confusão
+- "Outros / Genérico" — reclamação vaga sem detalhar o problema
 
 ## Regras críticas:
 1. Use SEMPRE a categoria EXATA da lista — nunca crie variações ou novas categorias
-2. Classifique pelo problema PRINCIPAL se houver múltiplos
-3. "Ficou grande" vs "Ficou pequeno" — leia com atenção: "folgada/sobrando/enrugada" = grande; "não coube/não esticou/justo" = pequeno
-4. Reclamação sobre entrega demorada sem mencionar problema no produto → "Produto não chegou"
-5. Gato/pet rasgou/furou a capa → "Rasgou facilmente"
-6. Cor errada → "Cor diferente da foto" (não "Qualidade ruim")
-7. Tecido escorrega no móvel → "Não fixa / escorrega" (não "Ficou grande")
-8. Responda APENAS JSON, sem markdown, sem preamble
+2. Classifique pelo problema PRINCIPAL quando houver múltiplos
+3. "Cor Errada" cobre QUALQUER situação de cor incorreta: recebeu cor diferente do site, recebeu cores misturadas no kit, tonalidade errada — NÃO use "Produto Errado" para casos de cor
+4. "Produto Errado" é exclusivo para modelo/tamanho/tipo errado (ex: capa de 2 lugares em vez de 3)
+5. "Não Serviu - Grande" = folgada/sobrando/enrugada; "Não Serviu - Pequeno" = não coube/não esticou; "Não Serviu" = não especificado
+6. "Qualidade Ruim - Escorrega" = capa escorrega do móvel; diferente de "Não Serviu - Grande" (que é sobre tamanho)
+7. Entrega atrasada ou rastreamento inexistente → "Não Recebi (atraso)", mesmo que o produto seja criticado
+8. Gato/pet rasgou/furou a capa → "Qualidade Ruim - Rasgou"
+9. Responda APENAS JSON, sem markdown, sem preamble
 
 ## Formato de resposta:
 [
-  {"index": 0, "categoria": "Ficou grande", "tipo": "produto"},
-  {"index": 1, "categoria": "Produto não chegou", "tipo": "logistica"},
-  {"index": 2, "categoria": "Insatisfação geral", "tipo": "outro"}
+  {"index": 0, "categoria": "Não Serviu - Grande", "tipo": "produto"},
+  {"index": 1, "categoria": "Não Recebi (atraso)", "tipo": "logistica"},
+  {"index": 2, "categoria": "Outros / Genérico", "tipo": "outro"}
 ]`;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,7 +158,7 @@ function parseClassificacoes(raw: string, batchSize: number, offset: number): Cl
 
   return Array.from({ length: batchSize }, (_, i) => ({
     index: offset + i,
-    categoria: 'Insatisfação geral',
+    categoria: 'Outros / Genérico',
     tipo: 'outro' as TipoProblema,
   }));
 }
@@ -188,7 +196,7 @@ function agruparPorProduto(reviews: ReviewInput[]): Map<string, ReviewInput[]> {
 
 function inferirTipo(categoria: string): TipoProblema {
   if (CATEGORIAS_LOGISTICA.has(categoria)) return 'logistica';
-  if (categoria === 'Insatisfação geral') return 'outro';
+  if (CATEGORIAS_OUTRO.has(categoria)) return 'outro';
   return 'produto';
 }
 
