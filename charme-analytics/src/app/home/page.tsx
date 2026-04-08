@@ -90,7 +90,7 @@ export default async function HomPage() {
                   <Lightbulb size={18} className="text-zinc-400" strokeWidth={1.5} />
                 </div>
               </div>
-              <h2 className="text-base font-semibold text-charme-text mb-1.5">Analise Avaliações Negativas Shopify</h2>
+              <h2 className="text-base font-semibold text-charme-text mb-1.5">Análise Avaliações Negativas e Devoluções</h2>
               <p className="text-xs text-zinc-500 flex-1 leading-relaxed">
                 Upload do CSV Judge.me e identificação automática dos problemas por produto.
               </p>

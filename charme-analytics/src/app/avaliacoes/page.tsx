@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { AvaliacoesView } from '@/components/avaliacoes/resultados-view';
+import { AvaliacoesSelectorView } from '@/components/avaliacoes/avaliacoes-selector';
 
 export default async function AvaliacoesPage() {
   const cookieStore = await cookies();
@@ -8,5 +8,5 @@ export default async function AvaliacoesPage() {
     redirect('/');
   }
 
-  return <AvaliacoesView />;
+  return <AvaliacoesSelectorView />;
 }
