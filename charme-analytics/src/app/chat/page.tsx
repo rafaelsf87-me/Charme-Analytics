@@ -20,7 +20,7 @@ export default async function ChatPage() {
             ← Voltar
           </Link>
           <span className="text-white/30">|</span>
-          <Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-md" />
+          <Link href="/home"><Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-md" /></Link>
           <span className="font-semibold text-white">Charme Analytics</span>
           <span className="text-xs text-white/50 hidden sm:inline">Central de Dados</span>
         </div>

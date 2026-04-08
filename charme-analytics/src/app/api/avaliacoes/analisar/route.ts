@@ -64,7 +64,6 @@ const CATEGORIAS_LOGISTICA = new Set([
 
 // Categorias genéricas — aparecem em cinza claro
 const CATEGORIAS_OUTRO = new Set([
-  'Comprou Errado (problema unidades)',
   'Outros / Genérico',
 ]);
 
@@ -76,9 +75,9 @@ As categorias têm hierarquia: algumas são genéricas (ex: "Qualidade Ruim") e 
 ## CATEGORIAS
 
 ### Não Recebi (atraso)
-Cliente não recebeu o produto ou houve atraso significativo na entrega.
-Palavras-chave: não recebi, não chegou, nunca entregue, atraso, não foi entregue, até agora nada, código de rastreio, não entregaram
-Exemplos: "Não recebi meu produto." / "Até agora eu não recebi." / "Nunca foi entregue" / "Até agora eu não recebi. Eu pedi dia 27 e até agora nada."
+Cliente não recebeu o produto ou houve atraso significativo na entrega. Inclui casos onde o cliente ameaça reclamar no Reclame Aqui, Procon ou redes sociais PORQUE não recebeu — o problema principal é o não recebimento.
+Palavras-chave: não recebi, não chegou, nunca entregue, atraso, não foi entregue, até agora nada, código de rastreio, não entregaram, reclame aqui (quando motivo é não recebimento)
+Exemplos: "Não recebi meu produto." / "Até agora eu não recebi." / "Nunca foi entregue" / "Até agora eu não recebi. Eu pedi dia 27 e até agora nada." / "Não recebi o produto: Estou fazendo uma reclamação no reclame aqui, vocês dizem que entregaram mas nada chegou." / "Comprei dia 9 de maio até agora não recebi o produto, nunca mais compro neste site uma falta de respeito com o cliente, se não resolver até segunda vou reclamar o reclame aqui." / "Não recebi o produto, vou acionar o Procon."
 
 ### Qualidade Ruim
 Insatisfação genérica com qualidade quando NÃO é possível identificar o subtipo específico. Use esta SÓ quando o texto não permite classificar nas subcategorias abaixo.
@@ -107,8 +106,8 @@ Exemplos: "Fica escorregando o tempo todo, enruga tudo no sofá" / "Ela fica sai
 
 ### Não Serviu
 Genérico — capa não serviu no móvel, sem especificar se é grande ou pequena. Use SÓ quando o texto não permite classificar se ficou grande ou pequena.
-Palavras-chave: não serviu, não encaixou, não coube (sem dizer se é grande/pequena), não vestiu, não se encaixa, padronagem diferente e não encaixa
-Exemplos: "Não encaixou na minha cadeira." / "A capa não deu certo" / "A capa de 2 lugares e a de 3 vieram com padronagem diferente e não se encaixam em qualquer modelo de sofá" — mesmo com menção a devolução/reembolso, o problema principal é encaixe → "Não Serviu"
+Palavras-chave: não serviu, não encaixou, não coube (sem dizer se é grande/pequena), não vestiu, não se encaixa, padronagem diferente e não encaixa, não deu, finas (quando o motivo é encaixe/não serviu)
+Exemplos: "Não encaixou na minha cadeira." / "A capa não deu certo" / "A capa de 2 lugares e a de 3 vieram com padronagem diferente e não se encaixam em qualquer modelo de sofá" — mesmo com menção a devolução/reembolso, o problema principal é encaixe → "Não Serviu" / "Terei que devolver não serviu nas minhas cadeiras: Gostaria muito de devolver por favor me envie o procedimento para isso, se tiver capa que seja acolchoada ou seja matelassada ficaria melhor mas essas fininhas não deu" → o primeiro problema declarado é encaixe/não serviu → "Não Serviu"
 
 ### Não Serviu - Pequeno
 Capa ficou pequena, apertada, curta, não coube.
@@ -169,8 +168,9 @@ Exemplos: "Não posso avaliar pois o material foi devolvido" / "Loja não respon
 8. Gato/pet rasgou/furou → "Qualidade Ruim - Rasgou"
 9. Atendimento ruim como problema secundário → classificar pelo problema de produto
 10. Menção a devolução, reembolso ou troca NÃO muda a categoria — classifique sempre pelo problema do produto que motivou a devolução
-11. Nunca deixar sem categoria — se nada se encaixa, usar "Outros / Genérico"
-12. Responda APENAS JSON, sem markdown, sem preamble
+11. Menção a "reclame aqui", "procon", "processar" junto com não recebimento → SEMPRE "Não Recebi (atraso)", nunca "Outros / Genérico"
+12. Nunca deixar sem categoria — se nada se encaixa, usar "Outros / Genérico"
+13. Responda APENAS JSON, sem markdown, sem preamble
 
 ## Formato de resposta:
 [

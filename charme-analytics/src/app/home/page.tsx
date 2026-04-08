@@ -16,7 +16,7 @@ export default async function HomPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 bg-charme border-b border-charme/20 shrink-0">
         <div className="flex items-center gap-3">
-          <Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-lg" />
+          <Link href="/home"><Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-lg" /></Link>
           <span className="font-semibold text-white">Charme Analytics</span>
           <span className="ml-1 text-xs text-white/60 hidden sm:inline">Central de Inteligência</span>
         </div>

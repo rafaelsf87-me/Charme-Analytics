@@ -16,7 +16,7 @@ type Mode = 'upload' | 'processing' | 'results';
 
 // ─── Resumo consolidado ────────────────────────────────────────────────────────
 
-function ResumoConsolidado({ produtos }: { produtos: ProdutoResultado[] }) {
+function ResumoConsolidado({ produtos, totalProdutos }: { produtos: ProdutoResultado[]; totalProdutos: number }) {
   const totalNegativas = produtos.reduce((s, p) => s + p.total_negativas, 0);
 
   // Somar quantidades por categoria em todos os produtos
@@ -27,21 +27,23 @@ function ResumoConsolidado({ produtos }: { produtos: ProdutoResultado[] }) {
     }
   }
 
-  const top3 = [...contagem.entries()]
+  const top5 = [...contagem.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
+    .slice(0, 5);
 
-  if (top3.length === 0) return null;
+  if (top5.length === 0) return null;
 
-  const max = top3[0][1];
+  const top5Sum = top5.reduce((s, [, q]) => s + q, 0);
+  const demaisQtd = totalNegativas - top5Sum;
+  const max = top5[0][1];
 
   return (
     <div className="bg-white border border-charme-border rounded-xl shadow-sm p-5 mb-5">
       <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-4">
-        Top 3 Reclamações — Todos os Produtos
+        Top 5 Reclamações — Todos os Produtos
       </p>
       <div className="space-y-3">
-        {top3.map(([cat, qtd], i) => {
+        {top5.map(([cat, qtd], i) => {
           const pct = totalNegativas > 0 ? (qtd / totalNegativas) * 100 : 0;
           const barPct = max > 0 ? (qtd / max) * 100 : 0;
           return (
@@ -64,9 +66,30 @@ function ResumoConsolidado({ produtos }: { produtos: ProdutoResultado[] }) {
             </div>
           );
         })}
+
+        {/* Linha de fechamento para somar 100% */}
+        {demaisQtd > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-1 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] font-bold text-zinc-300 w-4 shrink-0" />
+                <span className="text-sm text-zinc-400 italic truncate">Demais categorias</span>
+              </div>
+              <span className="text-xs tabular-nums text-zinc-400 shrink-0">
+                {demaisQtd} <span className="text-zinc-300">({(demaisQtd / totalNegativas * 100).toFixed(1)}%)</span>
+              </span>
+            </div>
+            <div className="w-full bg-zinc-100 rounded-full h-2">
+              <div
+                className="h-2 rounded-full"
+                style={{ width: `${(demaisQtd / max) * 100}%`, backgroundColor: '#e4e4e7' }}
+              />
+            </div>
+          </div>
+        )}
       </div>
       <p className="text-[11px] text-zinc-400 mt-3">
-        Base: {totalNegativas.toLocaleString('pt-BR')} avaliações negativas em {produtos.length} produto{produtos.length !== 1 ? 's' : ''}
+        Base: {totalNegativas.toLocaleString('pt-BR')} avaliações negativas em {totalProdutos} produto{totalProdutos !== 1 ? 's' : ''}
       </p>
     </div>
   );
@@ -197,16 +220,19 @@ export function AvaliacoesView() {
     setBusca('');
   }
 
-  // Filtrar (ordenação fixa: mais negativas primeiro — já vem do backend)
+  // Top 40 para o dashboard (resumo usa todos)
+  const top40 = useMemo(() => produtos.slice(0, 40), [produtos]);
+
+  // Filtrar dentro do top 40
   const produtosFiltrados = useMemo(() => {
-    if (!busca.trim()) return produtos;
+    if (!busca.trim()) return top40;
     const q = busca.toLowerCase();
-    return produtos.filter(p => {
+    return top40.filter(p => {
       const img = imagens.get(p.product_handle);
       const nome = img?.title ?? p.product_handle;
       return nome.toLowerCase().includes(q) || p.product_handle.toLowerCase().includes(q);
     });
-  }, [produtos, imagens, busca]);
+  }, [top40, imagens, busca]);
 
   // ── Header compartilhado ──────────────────────────────────────────────────
 
@@ -227,7 +253,7 @@ export function AvaliacoesView() {
             </Link>
           )}
           <span className="text-white/30">|</span>
-          <Image src="/logo.png" alt="Charme Analytics" width={24} height={24} className="rounded-md" />
+          <Link href="/home"><Image src="/logo.png" alt="Charme Analytics" width={24} height={24} className="rounded-md" /></Link>
           <span className="font-semibold text-white text-sm">Analise Avaliações Negativas Shopify</span>
         </div>
       </header>
@@ -315,8 +341,8 @@ export function AvaliacoesView() {
                 </div>
               </div>
 
-              {/* Resumo consolidado */}
-              <ResumoConsolidado produtos={produtosFiltrados} />
+              {/* Resumo consolidado — usa TODOS os produtos, não só os filtrados */}
+              <ResumoConsolidado produtos={produtos} totalProdutos={produtos.length} />
 
               {/* Grid de cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

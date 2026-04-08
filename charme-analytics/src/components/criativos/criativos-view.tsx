@@ -187,7 +187,7 @@ export function CriativosView() {
             </Link>
           )}
           <span className="text-white/30">|</span>
-          <Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-md" />
+          <Link href="/home"><Image src="/logo.png" alt="Charme Analytics" width={28} height={28} className="rounded-md" /></Link>
           <span className="font-semibold text-white">Relatório de Criativos</span>
         </div>
       </header>

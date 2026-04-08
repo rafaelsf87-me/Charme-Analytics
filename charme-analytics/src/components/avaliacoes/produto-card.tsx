@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import type { ProdutoResultado, TipoProblema } from '@/app/api/avaliacoes/analisar/route';
 import type { ProdutoImagem } from '@/app/api/avaliacoes/imagens/route';
@@ -36,37 +37,68 @@ function valueClass(tipo: TipoProblema): string {
 // ─── Tooltip "i" ───────────────────────────────────────────────────────────────
 
 function InfoTooltip({ textos }: { textos: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
   if (textos.length === 0) return null;
+
+  function handleCopy() {
+    const text = textos.map((t, i) => `${i + 1}. ${t}`).join('\n\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
   return (
-    <div className="relative group/tip inline-flex items-center shrink-0 ml-1.5">
+    <div className="relative inline-flex items-center shrink-0 ml-1.5" ref={ref}>
       {/* Ícone */}
-      <div className="w-4 h-4 rounded-full bg-zinc-100 border border-zinc-200 text-zinc-400 text-[9px] font-bold flex items-center justify-center cursor-help select-none hover:bg-zinc-200 transition-colors">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-4 h-4 rounded-full bg-zinc-100 border border-zinc-200 text-zinc-400 text-[9px] font-bold flex items-center justify-center cursor-pointer select-none hover:bg-zinc-200 transition-colors"
+      >
         i
-      </div>
+      </button>
 
-      {/* Tooltip — aparece acima do ícone */}
-      <div className="
-        absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2
-        hidden group-hover/tip:block
-        w-80 bg-zinc-900 text-zinc-100 text-[11px] leading-relaxed
-        rounded-xl shadow-2xl
-        pointer-events-none
-      ">
-        {/* Conteúdo */}
-        <div className="p-3 max-h-56 overflow-y-auto space-y-2">
-          {textos.map((t, i) => (
-            <p
-              key={i}
-              className="border-b border-zinc-700/60 pb-2 last:border-0 last:pb-0"
+      {/* Painel — clique para abrir, scroll e cópia habilitados */}
+      {open && (
+        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-zinc-900 text-zinc-100 text-[11px] leading-relaxed rounded-xl shadow-2xl">
+          {/* Header com contador e botão copiar */}
+          <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 border-b border-zinc-700/60">
+            <span className="text-[10px] text-zinc-400 font-medium">{textos.length} avaliação{textos.length !== 1 ? 'ões' : ''}</span>
+            <button
+              onClick={handleCopy}
+              className="text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
             >
-              &ldquo;{t}&rdquo;
-            </p>
-          ))}
-        </div>
+              {copied ? '✓ Copiado' : 'Copiar tudo'}
+            </button>
+          </div>
 
-        {/* Seta */}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-zinc-900" />
-      </div>
+          {/* Lista com scroll */}
+          <div className="p-3 max-h-64 overflow-y-auto space-y-2">
+            {textos.map((t, i) => (
+              <p key={i} className="border-b border-zinc-700/60 pb-2 last:border-0 last:pb-0 select-text">
+                &ldquo;{t}&rdquo;
+              </p>
+            ))}
+          </div>
+
+          {/* Seta */}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-zinc-900" />
+        </div>
+      )}
     </div>
   );
 }
