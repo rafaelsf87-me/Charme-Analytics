@@ -44,6 +44,17 @@ const BATCH_SIZE = 80;
 const BATCH_TIMEOUT_MS = 90_000;
 const MIN_OCORRENCIAS = 2;
 
+// Rollup: subcategorias sobem para o pai quando abaixo do mínimo
+const ROLLUP_PARENT: Record<string, string> = {
+  'Qualidade Ruim - Tecido':   'Qualidade Ruim',
+  'Qualidade Ruim - Costura':  'Qualidade Ruim',
+  'Qualidade Ruim - Rasgou':   'Qualidade Ruim',
+  'Qualidade Ruim - Escorrega':'Qualidade Ruim',
+  'Qualidade - Manchado':      'Qualidade Ruim',
+  'Não Serviu - Grande':       'Não Serviu',
+  'Não Serviu - Pequeno':      'Não Serviu',
+};
+
 // Categorias de logística — aparecem em cinza no card
 const CATEGORIAS_LOGISTICA = new Set([
   'Não Recebi (atraso)',
@@ -58,49 +69,107 @@ const CATEGORIAS_OUTRO = new Set([
 ]);
 
 const SYSTEM_PROMPT = `Você é um analista de qualidade especialista em e-commerce de capas para móveis (cadeiras, sofás, poltronas).
-Recebeu avaliações negativas de clientes. Classifique cada avaliação em UMA categoria padronizada.
+Classifique cada avaliação negativa em UMA das categorias abaixo. Use EXATAMENTE o nome da categoria listado.
 
-## Categorias de PRODUTO (problemas com o produto em si):
+As categorias têm hierarquia: algumas são genéricas (ex: "Qualidade Ruim") e outras são específicas (ex: "Qualidade Ruim - Costura"). Sempre prefira a categoria ESPECÍFICA quando o texto permitir identificar o subproblema.
 
-Tamanho / Encaixe:
-- "Não Serviu - Grande" — capa folgada, enrugada, sobrando, ficou largo, muito grande para o móvel
-- "Não Serviu - Pequeno" — capa pequena, não cobriu o móvel, ficou curta, não esticou, menor que o esperado
-- "Não Serviu" — não encaixou / não serviu sem especificar se grande ou pequeno
+## CATEGORIAS
 
-Qualidade:
-- "Qualidade Ruim - Tecido" — material fino, ralo, leve, parece papel, tecido de baixa qualidade
-- "Qualidade Ruim - Costura" — descosturou, costura aberta, veio rasgada na costura, arrebentou na instalação
-- "Qualidade Ruim - Rasgou" — furou, rasgou com uso, gato destruiu em pouco tempo, desfibrou
-- "Qualidade Ruim - Escorrega" — fica saindo do móvel, escorrega, não prende, não fica no lugar
-- "Não é Impermeável" — líquido atravessou, não é impermeável como prometido, xixi do pet atravessou
-- "Qualidade - Manchado" — produto veio com manchas de mofo ou sujeira
-- "Qualidade Ruim" — qualidade abaixo do esperado de forma geral, diferente da propaganda (use apenas quando não há subcategoria específica acima)
+### Não Recebi (atraso)
+Cliente não recebeu o produto ou houve atraso significativo na entrega.
+Palavras-chave: não recebi, não chegou, nunca entregue, atraso, não foi entregue, até agora nada, código de rastreio, não entregaram
+Exemplos: "Não recebi meu produto." / "Até agora eu não recebi." / "Nunca foi entregue"
 
-Aparência:
-- "Cor Errada" — cor veio diferente do pedido ou do anunciado no site (independente de ser erro de envio ou diferença de paleta)
+### Qualidade Ruim
+Insatisfação genérica com qualidade quando NÃO é possível identificar o subtipo específico. Use esta SÓ quando o texto não permite classificar nas subcategorias abaixo.
+Palavras-chave: qualidade ruim, material fraco, péssima qualidade, decepcionei, esperava melhor, propaganda enganosa, não vale o preço
+Exemplos: "Material muito fraco, achei que era melhor" / "Me decepcionei, esperava um tecido mais encorpado."
 
-Funcionalidade:
-- "Dificuldade Utilização" — difícil de colocar, não conseguiu instalar, processo de encaixe impossível
+### Qualidade Ruim - Tecido
+Reclamação específica sobre o tecido ser fino, fraco, brilhante, plástico ou de má qualidade.
+Palavras-chave: tecido fino, tecido fraco, tecido brilhante, tecido plástico, material fino, parece plástico
+Exemplos: "Tecido muito fino. Não protegerá em nada minhas cadeiras." / "Péssimo acabamento! Tecido brilhante!!!!"
 
-## Categorias de LOGÍSTICA (problema na entrega, não no produto):
-- "Não Recebi (atraso)" — não recebeu, não entregue, rastreamento sem atualização, entrega atrasada
-- "Produto Errado" — recebeu modelo/tamanho diferente do pedido (ex: pediu 3 lugares, veio de 2)
-- "Pedido Faltando Peça" — faltou unidade, veio quantidade menor que a comprada, parte do kit não chegou
+### Qualidade Ruim - Costura
+Problemas com costura, acabamento, fita de ajuste, peças descosturadas.
+Palavras-chave: costura, descosturada, mal acabada, fita arrebentou, costurada torto, acabamento ruim, falha na costura
+Exemplos: "Duas capas vieram com falha na costura" / "Uma delas veio descosturada na lateral e costurada tudo torto" / "A fita de ajuste arrebentou."
 
-## Categorias GENÉRICAS:
-- "Comprou Errado (problema unidades)" — cliente não entendeu que era 1 unidade, comprou o produto errado por própria confusão
-- "Outros / Genérico" — reclamação vaga sem detalhar o problema
+### Qualidade Ruim - Rasgou
+Produto rasgou, furou, desfiou ou soltou fios em pouco tempo de uso.
+Palavras-chave: rasgou, furou, desfiando, fios soltos, fios puxados, soltando fio, unha do gato, primeira semana
+Exemplos: "Furou na primeira semana" / "Já está toda desfiando, não tem proteção contra arranhões!" / "Em uma semana já está cheia de fios soltando"
 
-## Regras críticas:
-1. Use SEMPRE a categoria EXATA da lista — nunca crie variações ou novas categorias
-2. Classifique pelo problema PRINCIPAL quando houver múltiplos
-3. "Cor Errada" cobre QUALQUER situação de cor incorreta: recebeu cor diferente do site, recebeu cores misturadas no kit, tonalidade errada — NÃO use "Produto Errado" para casos de cor
-4. "Produto Errado" é exclusivo para modelo/tamanho/tipo errado (ex: capa de 2 lugares em vez de 3)
-5. "Não Serviu - Grande" = folgada/sobrando/enrugada; "Não Serviu - Pequeno" = não coube/não esticou; "Não Serviu" = não especificado
-6. "Qualidade Ruim - Escorrega" = capa escorrega do móvel; diferente de "Não Serviu - Grande" (que é sobre tamanho)
-7. Entrega atrasada ou rastreamento inexistente → "Não Recebi (atraso)", mesmo que o produto seja criticado
-8. Gato/pet rasgou/furou a capa → "Qualidade Ruim - Rasgou"
-9. Responda APENAS JSON, sem markdown, sem preamble
+### Qualidade Ruim - Escorrega
+Capa não fica fixa, escorrega, sai do lugar.
+Palavras-chave: escorrega, escorregando, não fixa, fica saindo, sai do lugar, não prendeu, solta
+Exemplos: "Fica escorregando o tempo todo, enruga tudo no sofá" / "Ela fica saindo do sofá" / "Não fixou, já devolvi"
+
+### Não Serviu
+Genérico — capa não serviu no móvel, sem especificar se é grande ou pequena. Use SÓ quando o texto não permite classificar se ficou grande ou pequena.
+Palavras-chave: não serviu, não encaixou, não coube (sem dizer se é grande/pequena), não vestiu
+Exemplos: "Não encaixou na minha cadeira." / "A capa não deu certo"
+
+### Não Serviu - Pequeno
+Capa ficou pequena, apertada, curta, não coube.
+Palavras-chave: pequena, apertada, curta, não coube, menor que, muito justa, não cobriu
+Exemplos: "Ficaram pequenas e minhas cadeiras são padrão" / "Veio pequena, fiz a devolução"
+
+### Não Serviu - Grande
+Capa ficou grande, solta, sobrando, folgada.
+Palavras-chave: grande, solta, folgada, imensa, sobrando, enorme, larga demais
+Exemplos: "A capa ficou muito solta no sofá" / "Ficou imensa, sobrando" / "Grande, não é ajustável."
+
+### Cor Errada
+Cor recebida diferente da comprada ou variação de cor entre unidades do mesmo pedido.
+Palavras-chave: cor errada, cor diferente, não é a cor, veio outra cor, cores diferentes, não veio a cor que escolhi
+Exemplos: "A cor recebida foi marrom, não veio verde oliva." / "Pedi 6 capas iguais. Recebi 4 de uma cor e 2 de outra."
+
+### Produto Errado
+Recebeu produto/tamanho/modelo diferente do comprado — não é cor, é o item em si.
+Palavras-chave: capa errada, veio errada, errado, 2 lugares ao invés de 3, produto trocado, mandaram outro
+Exemplos: "Recebi uma capa de 2 lugares ao invés de 3" / "Veio a capa errada"
+
+### Não é Impermeável
+Prometido como impermeável mas não protege contra líquidos.
+Palavras-chave: impermeável, não é impermeável, vazou, molhou, xixi, líquido, água passou
+Exemplos: "Até a cachorra subir no sofá e fazer xixi." / "Comprei impermeável e recebi normal"
+
+### Pedido Faltando Peça
+Pedido incompleto — faltou parte do produto ou do pedido.
+Palavras-chave: faltando, incompleto, segunda metade, não veio tudo, peça faltando
+Exemplos: "Não entregou a segunda metade do meu pedido"
+
+### Dificuldade Utilização
+Dificuldade em colocar, instalar ou usar o produto (diferente de "não serviu" — aqui o produto até serve, mas é trabalhoso).
+Palavras-chave: difícil de colocar, chato de usar, complicado, não fica arrumado, trabalhoso
+Exemplos: "É lindo, mas muito chato de usar, o sofá não fica arrumado"
+
+### Comprou Errado (problema unidades)
+Cliente se confundiu com o site — não é erro da loja, é confusão do cliente.
+Palavras-chave: 1 unidade, achei que era par, pensei que vinham mais, site confuso, não ficou claro
+Exemplos: "Deveriam deixar mais explícito no site que é apenas 1 unidade"
+
+### Outros / Genérico
+Usar APENAS quando o texto não se encaixa em nenhuma categoria acima. Inclui: pós-venda ruim sem outro problema, avaliação sem informação útil, devolveu sem explicar motivo.
+Palavras-chave: devolvido, pós-venda, não respondem, atendimento (quando o foco é APENAS atendimento)
+Exemplos: "Não posso avaliar pois o material foi devolvido" / "Loja não responde o cliente."
+
+---
+
+## REGRAS DE DECISÃO
+
+1. Use SEMPRE o nome EXATO da categoria — nunca crie variações
+2. Quando houver múltiplos problemas, classifique pelo PRIMEIRO problema mencionado no texto
+3. Específica > Genérica: se o texto permite o subtipo, use o subtipo
+4. "Cor Errada" cobre qualquer situação de cor incorreta — NÃO use "Produto Errado" para cor
+5. "Produto Errado" = modelo/tamanho/tipo errado (não cor)
+6. "Qualidade Ruim - Escorrega" = capa escorrega do móvel; "Não Serviu - Grande" = tamanho folgado
+7. Entrega atrasada ou rastreamento inexistente → "Não Recebi (atraso)"
+8. Gato/pet rasgou/furou → "Qualidade Ruim - Rasgou"
+9. Atendimento ruim como problema secundário → classificar pelo problema de produto
+10. Nunca deixar sem categoria — se nada se encaixa, usar "Outros / Genérico"
+11. Responda APENAS JSON, sem markdown, sem preamble
 
 ## Formato de resposta:
 [
@@ -284,7 +353,20 @@ export async function POST(request: NextRequest) {
     const textos_outros: string[] = [];
     let outros = 0;
 
-    for (const [cat, { quantidade, tipo, textos }] of conteudo.entries()) {
+    // Rollup: subcategorias abaixo do mínimo sobem para o pai
+    const consolidated = new Map<string, { quantidade: number; tipo: TipoProblema; textos: string[] }>();
+    for (const [cat, data] of conteudo.entries()) {
+      const parent = data.quantidade < MIN_OCORRENCIAS ? (ROLLUP_PARENT[cat] ?? cat) : cat;
+      const existing = consolidated.get(parent);
+      if (existing) {
+        existing.quantidade += data.quantidade;
+        existing.textos.push(...data.textos);
+      } else {
+        consolidated.set(parent, { quantidade: data.quantidade, tipo: inferirTipo(parent), textos: [...data.textos] });
+      }
+    }
+
+    for (const [cat, { quantidade, tipo, textos }] of consolidated.entries()) {
       if (quantidade >= MIN_OCORRENCIAS) {
         problemas.push({
           categoria: cat,
