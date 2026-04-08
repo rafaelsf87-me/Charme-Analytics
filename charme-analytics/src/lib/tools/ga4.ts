@@ -525,19 +525,28 @@ export async function ga4_get_item_report(input: ItemReportInput): Promise<strin
     let output = '';
 
     if (isBoth) {
-      // TOP N Melhores + TOP N Piores (sorted desc, piores = last N)
-      const best  = processed.slice(0, safeLimit);
-      const worst = processed.slice(-safeLimit).reverse(); // pior primeiro
+      // Garante que best e worst não se sobreponham quando há poucos produtos
+      const half      = Math.floor(processed.length / 2);
+      const bestCount = Math.min(safeLimit, half);
+      const worstCount = Math.min(safeLimit, processed.length - bestCount);
+
+      const best  = processed.slice(0, bestCount);
+      const worst = processed.slice(processed.length - worstCount).reverse(); // pior primeiro
 
       const bestTable  = compactTable(usedHeaders, best.map(toRow));
-      const worstTable = compactTable(usedHeaders, worst.map(toRow));
+      const worstTable = compactTable(usedHeaders, worst.map((r, i) => toRow(r, i)));
+
+      const overlapNote = processed.length < safeLimit * 2
+        ? `⚠️ Apenas ${processed.length} produtos no período — listas limitadas a ${bestCount} cada para evitar sobreposição.\n`
+        : '';
 
       output =
-        `[GA4] Top ${safeLimit} Melhores × Piores por ${sortLabel[sort_by] ?? sort_by} (${periodStr})\n` +
-        `Total produtos analisados: ${rawRows.length}\n\n` +
-        `🏆 **TOP ${safeLimit} MELHORES** — ${sortLabel[sort_by] ?? sort_by}\n` +
+        `[GA4] Top ${bestCount} Melhores × Piores por ${sortLabel[sort_by] ?? sort_by} (${periodStr})\n` +
+        `Total produtos analisados: ${rawRows.length}\n` +
+        overlapNote +
+        `\n🏆 **TOP ${bestCount} MELHORES** — ${sortLabel[sort_by] ?? sort_by}\n` +
         `${bestTable}\n\n` +
-        `💔 **TOP ${safeLimit} PIORES** — ${sortLabel[sort_by] ?? sort_by}\n` +
+        `💔 **TOP ${worstCount} PIORES** — ${sortLabel[sort_by] ?? sort_by}\n` +
         `${worstTable}`;
     } else {
       const display   = processed.slice(0, safeLimit);

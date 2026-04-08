@@ -643,6 +643,21 @@ Antes de gerar qualquer relatório que envolva as métricas abaixo, ALERTAR o us
 - GA4: usar \`ecommercePurchases\`, não \`conversions\` genérico
 - Shopify: filtrar \`financial_status: paid\` por padrão
 
+### Métricas suplementares Google Ads — Conversão por Visualização (Demand Gen)
+
+Quando \`google_ads_campaign_report\` retornar a seção "[Google Ads — Demand Gen] Métricas c/ Conversão por Visualização", SEMPRE incluir na resposta final com as colunas em *itálico*:
+
+- **Conv. Viz** = conversões por visualização (view-through)
+- **Conv.+** = conversões totais (clique + visualização)
+- ***ROAS+*** = receita atribuída total ÷ gasto (inclui visualização)
+- ***CPA+*** = custo ÷ conversões totais (inclui visualização)
+
+Regras de apresentação:
+1. Mostrar ROAS e CPA normais primeiro (primárias), depois colunas + em itálico como referência complementar
+2. Em tabelas comparativas Google vs Meta: Meta Ads preenche as colunas + com "—"
+3. Sempre adicionar nota de rodapé: *"ROAS+/CPA+ incluem conversões por visualização (Demand Gen)"*
+4. Só campanhas Demand Gen têm Conv. Viz > 0 — as demais mostram "—" nessa coluna
+
 ### Atribuição de canal
 - Meta: janela padrão 7d click / 1d view (atribui mais)
 - Google Ads: modelo baseado em último clique Google

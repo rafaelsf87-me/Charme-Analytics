@@ -90,6 +90,9 @@ interface GAdsRow {
     conversionsValue: string;
     ctr: string;
     averageCpc: string;
+    allConversions: string;
+    allConversionsValue: string;
+    viewThroughConversions: string;
   };
 }
 
@@ -187,7 +190,10 @@ export async function google_ads_campaign_report(
       metrics.average_cpc,
       metrics.conversions,
       metrics.conversions_value,
-      metrics.ctr
+      metrics.ctr,
+      metrics.all_conversions,
+      metrics.all_conversions_value,
+      metrics.view_through_conversions
     FROM campaign
     WHERE segments.date BETWEEN '${date_from}' AND '${date_to}'
       AND ${statusFilter}
@@ -212,8 +218,30 @@ export async function google_ads_campaign_report(
     let totalGasto = 0;
     let totalConversoes = 0;
     let totalReceita = 0;
+    let totalAllConv = 0;
+    let totalAllConvValue = 0;
+    let totalViewThrough = 0;
 
-    const tableRows = rows.map((row, i) => {
+    interface ProcessedCampaignRow {
+      i: number;
+      nome: string;
+      impressoes: string;
+      cliques: string;
+      ctr: number;
+      cpc: number;
+      custo: number;
+      conversoes: number;
+      receita: number;
+      roas: number;
+      cpa: number;
+      allConv: number;
+      allConvValue: number;
+      viewThrough: number;
+      roasPlus: number;
+      cpaPlus: number;
+    }
+
+    const processed: ProcessedCampaignRow[] = rows.map((row, i) => {
       const nome = row.campaign?.name ?? 'N/D';
       const impressoes = parseInt(row.metrics?.impressions ?? '0').toLocaleString('pt-BR');
       const cliques = parseInt(row.metrics?.clicks ?? '0').toLocaleString('pt-BR');
@@ -224,29 +252,38 @@ export async function google_ads_campaign_report(
       const conversoes = parseFloat(row.metrics?.conversions ?? '0');
       const receita = parseFloat(row.metrics?.conversionsValue ?? '0');
       const ctr = parseFloat(row.metrics?.ctr ?? '0');
+      const allConv = parseFloat(row.metrics?.allConversions ?? '0');
+      const allConvValue = parseFloat(row.metrics?.allConversionsValue ?? '0');
+      const viewThrough = parseFloat(row.metrics?.viewThroughConversions ?? '0');
 
-      // Métricas calculadas no backend
       const roas = custo > 0 ? receita / custo : 0;
       const cpa = conversoes > 0 ? custo / conversoes : 0;
+      const roasPlus = custo > 0 && allConvValue > 0 ? allConvValue / custo : 0;
+      const cpaPlus = allConv > 0 ? custo / allConv : 0;
 
       totalGasto += custo;
       totalConversoes += conversoes;
       totalReceita += receita;
+      totalAllConv += allConv;
+      totalAllConvValue += allConvValue;
+      totalViewThrough += viewThrough;
 
-      return [
-        String(i + 1),
-        nome,
-        impressoes,
-        cliques,
-        formatPercent(ctr),
-        cpc > 0 ? formatBRL(cpc) : 'N/D',
-        formatBRL(custo),
-        conversoes.toFixed(1),
-        formatBRL(receita),
-        roas > 0 ? `${roas.toFixed(2)}x` : 'N/D',
-        cpa > 0 ? formatBRL(cpa) : 'N/D',
-      ];
+      return { i, nome, impressoes, cliques, ctr, cpc, custo, conversoes, receita, roas, cpa, allConv, allConvValue, viewThrough, roasPlus, cpaPlus };
     });
+
+    const tableRows = processed.map(p => [
+      String(p.i + 1),
+      p.nome,
+      p.impressoes,
+      p.cliques,
+      formatPercent(p.ctr),
+      p.cpc > 0 ? formatBRL(p.cpc) : 'N/D',
+      formatBRL(p.custo),
+      p.conversoes.toFixed(1),
+      formatBRL(p.receita),
+      p.roas > 0 ? `${p.roas.toFixed(2)}x` : 'N/D',
+      p.cpa > 0 ? formatBRL(p.cpa) : 'N/D',
+    ]);
 
     const table = compactTable(
       ['#', 'Campanha', 'Impressões', 'Cliques', 'CTR', 'CPC Médio', 'Gasto', 'Conv.', 'Receita', 'ROAS', 'CPA'],
@@ -255,11 +292,40 @@ export async function google_ads_campaign_report(
 
     const roasTotal = totalGasto > 0 ? (totalReceita / totalGasto).toFixed(2) : 'N/D';
 
-    return (
+    let output =
       `[Google Ads] Campanhas — ${date_from} a ${date_to} (${rows.length} campanhas)\n` +
       `${table}\n` +
-      `Total: Gasto ${formatBRL(totalGasto)} | Conv. ${totalConversoes.toFixed(0)} | Receita ${formatBRL(totalReceita)} | ROAS ${roasTotal}x`
-    );
+      `Total: Gasto ${formatBRL(totalGasto)} | Conv. ${totalConversoes.toFixed(0)} | Receita ${formatBRL(totalReceita)} | ROAS ${roasTotal}x`;
+
+    // Seção suplementar: conversões por visualização (Demand Gen — "comparável à plataforma")
+    // Só exibe se houver view_through_conversions > 0 em alguma campanha
+    if (totalViewThrough > 0) {
+      const suppRows = processed.map(p => [
+        p.nome,
+        p.viewThrough > 0 ? p.viewThrough.toFixed(0) : '—',
+        p.allConv > 0 ? p.allConv.toFixed(1) : '—',
+        p.roasPlus > 0 ? `${p.roasPlus.toFixed(2)}x` : '—',
+        p.cpaPlus > 0 ? formatBRL(p.cpaPlus) : '—',
+      ]);
+
+      const roasPlusTotal = totalGasto > 0 && totalAllConvValue > 0
+        ? `${(totalAllConvValue / totalGasto).toFixed(2)}x` : 'N/D';
+      const cpaPlusTotal = totalAllConv > 0
+        ? formatBRL(totalGasto / totalAllConv) : 'N/D';
+
+      const suppTable = compactTable(
+        ['Campanha', 'Conv. Viz', 'Conv.+', 'ROAS+', 'CPA+'],
+        suppRows
+      );
+
+      output +=
+        `\n\n[Google Ads — Demand Gen] Métricas c/ Conversão por Visualização ("comparável à plataforma")\n` +
+        `${suppTable}\n` +
+        `Total: Conv. Viz ${totalViewThrough.toFixed(0)} | Conv.+ ${totalAllConv.toFixed(0)} | ROAS+ ${roasPlusTotal} | CPA+ ${cpaPlusTotal}\n` +
+        `Conv. Viz = view-through conversions. Conv.+ / ROAS+ / CPA+ incluem clique + visualização.`;
+    }
+
+    return output;
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('Timeout')) {
