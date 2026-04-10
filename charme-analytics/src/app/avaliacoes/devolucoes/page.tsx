@@ -8,15 +8,16 @@ import { DevolucoesProgress } from '@/components/avaliacoes/devolucoes-progress'
 import { DevolucoesResults, type RawItem } from '@/components/avaliacoes/devolucoes-results';
 
 interface ListarResponse {
-  vendidos: number[];
-  devolvidos: number[];
-  cancelados: number[];
-  descartados: number;
+  allIds: number[];
+  totalIds: number;
+}
+
+interface ItensResponse {
+  items: RawItem[];
   pedidoLojas: Record<string, string>;
   lojas: string[];
-  totalVendidos: number;
-  totalDevolvidos: number;
-  totalCancelados: number;
+  counts: { vendidos: number; devolvidos: number; cancelados: number; ignorados: number };
+  erros: number;
 }
 
 const BATCH_SIZE = 50;
@@ -37,32 +38,30 @@ export default function DevolucoesPage() {
   // Progresso
   const [fase, setFase] = useState<1 | 2>(1);
   const [fase1Done, setFase1Done] = useState(false);
-  const [resumoFase1, setResumoFase1] = useState<{
-    vendidos: number; devolvidos: number; cancelados: number; descartados: number;
-  } | null>(null);
+  const [totalEncontrados, setTotalEncontrados] = useState(0);
   const [batchAtual, setBatchAtual] = useState(0);
   const [totalBatches, setTotalBatches] = useState(0);
   const [pedidosProcessados, setPedidosProcessados] = useState(0);
-  const [totalPedidos, setTotalPedidos] = useState(0);
+  const [countVendidos, setCountVendidos] = useState(0);
+  const [countDevolvidos, setCountDevolvidos] = useState(0);
+  const [countCancelados, setCountCancelados] = useState(0);
 
-  // Dados brutos para agregação reativa (filtro por loja)
-  const [vendidosItems, setVendidosItems] = useState<RawItem[]>([]);
-  const [devolvidosItems, setDevolvidosItems] = useState<RawItem[]>([]);
-  const [canceladosItems, setCanceladosItems] = useState<RawItem[]>([]);
+  // Resultados
+  const [allItems, setAllItems] = useState<RawItem[]>([]);
   const [pedidoLojas, setPedidoLojas] = useState<Record<string, string>>({});
   const [lojas, setLojas] = useState<string[]>([]);
   const [resumoGeral, setResumoGeral] = useState<{
     totalPedidos: number; verificados: number; devolvidos: number;
-    cancelados: number; descartados: number;
+    cancelados: number; ignorados: number;
   } | null>(null);
 
   const cancelRef = useRef(false);
 
   const resetState = useCallback(() => {
-    setFase(1); setFase1Done(false); setResumoFase1(null);
-    setBatchAtual(0); setTotalBatches(0); setPedidosProcessados(0); setTotalPedidos(0);
-    setVendidosItems([]); setDevolvidosItems([]); setCanceladosItems([]);
-    setPedidoLojas({}); setLojas([]); setResumoGeral(null);
+    setFase(1); setFase1Done(false); setTotalEncontrados(0);
+    setBatchAtual(0); setTotalBatches(0); setPedidosProcessados(0);
+    setCountVendidos(0); setCountDevolvidos(0); setCountCancelados(0);
+    setAllItems([]); setPedidoLojas({}); setLojas([]); setResumoGeral(null);
     cancelRef.current = false;
   }, []);
 
@@ -73,7 +72,7 @@ export default function DevolucoesPage() {
     setMode('processing');
 
     try {
-      // ── Fase 1 ──────────────────────────────────────────────────────────────
+      // ── Fase 1: listar todos os IDs ─────────────────────────────────────────
       setFase(1);
       const fase1Res = await fetch('/api/avaliacoes/devolucoes/listar', {
         method: 'POST',
@@ -85,64 +84,78 @@ export default function DevolucoesPage() {
         throw new Error(err.error ?? 'Erro na Fase 1');
       }
       const fase1: ListarResponse = await fase1Res.json();
-
       setFase1Done(true);
-      setResumoFase1({
-        vendidos: fase1.totalVendidos, devolvidos: fase1.totalDevolvidos,
-        cancelados: fase1.totalCancelados, descartados: fase1.descartados,
-      });
-      setPedidoLojas(fase1.pedidoLojas);
-      setLojas(fase1.lojas);
+      setTotalEncontrados(fase1.totalIds);
 
-      if (cancelRef.current) return;
+      if (cancelRef.current || fase1.totalIds === 0) {
+        if (fase1.totalIds === 0) {
+          setResumoGeral({ totalPedidos: 0, verificados: 0, devolvidos: 0, cancelados: 0, ignorados: 0 });
+          setMode('results');
+        }
+        return;
+      }
 
-      // ── Fase 2 ──────────────────────────────────────────────────────────────
+      // ── Fase 2: buscar detalhe + classificar em batches ─────────────────────
       setFase(2);
+      const batches = chunks(fase1.allIds, BATCH_SIZE);
+      setTotalBatches(batches.length);
 
-      const groups = [
-        { ids: fase1.vendidos,   items: [] as RawItem[] },
-        { ids: fase1.devolvidos, items: [] as RawItem[] },
-        { ids: fase1.cancelados, items: [] as RawItem[] },
-      ];
-
-      const allBatches = groups.flatMap(g =>
-        chunks(g.ids, BATCH_SIZE).map(batch => ({ batch, group: g }))
-      );
-
-      const total = fase1.totalVendidos + fase1.totalDevolvidos + fase1.totalCancelados;
-      setTotalBatches(allBatches.length);
-      setTotalPedidos(total);
+      const accumulated: {
+        items: RawItem[];
+        pedidoLojas: Record<string, string>;
+        lojasSet: Set<string>;
+        counts: { vendidos: number; devolvidos: number; cancelados: number; ignorados: number };
+      } = {
+        items: [], pedidoLojas: {}, lojasSet: new Set(),
+        counts: { vendidos: 0, devolvidos: 0, cancelados: 0, ignorados: 0 },
+      };
 
       let processados = 0;
-      for (let i = 0; i < allBatches.length; i++) {
+
+      for (let i = 0; i < batches.length; i++) {
         if (cancelRef.current) return;
-        const { batch, group } = allBatches[i];
+
         const res = await fetch('/api/avaliacoes/devolucoes/itens', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderIds: batch }),
+          body: JSON.stringify({ orderIds: batches[i] }),
         });
+
         if (res.ok) {
-          const data = await res.json() as { items: RawItem[] };
-          group.items.push(...data.items);
+          const data: ItensResponse = await res.json();
+          accumulated.items.push(...data.items);
+          Object.assign(accumulated.pedidoLojas, data.pedidoLojas);
+          for (const l of data.lojas) accumulated.lojasSet.add(l);
+          accumulated.counts.vendidos   += data.counts.vendidos;
+          accumulated.counts.devolvidos += data.counts.devolvidos;
+          accumulated.counts.cancelados += data.counts.cancelados;
+          accumulated.counts.ignorados  += data.counts.ignorados;
+
+          // Atualizar contadores de progresso
+          setCountVendidos(accumulated.counts.vendidos);
+          setCountDevolvidos(accumulated.counts.devolvidos);
+          setCountCancelados(accumulated.counts.cancelados);
         }
-        processados += batch.length;
+
+        processados += batches[i].length;
         setBatchAtual(i + 1);
         setPedidosProcessados(processados);
       }
 
       if (cancelRef.current) return;
 
-      // ── Fase 3: salvar raw items para agregação reativa ──────────────────
-      setVendidosItems(groups[0].items);
-      setDevolvidosItems(groups[1].items);
-      setCanceladosItems(groups[2].items);
+      const { counts } = accumulated;
+      const totalPedidos = counts.vendidos + counts.devolvidos + counts.cancelados + counts.ignorados;
+
+      setAllItems(accumulated.items);
+      setPedidoLojas(accumulated.pedidoLojas);
+      setLojas([...accumulated.lojasSet].sort());
       setResumoGeral({
-        totalPedidos: total,
-        verificados: fase1.totalVendidos,
-        devolvidos: fase1.totalDevolvidos,
-        cancelados: fase1.totalCancelados,
-        descartados: fase1.descartados,
+        totalPedidos,
+        verificados:  counts.vendidos,
+        devolvidos:   counts.devolvidos,
+        cancelados:   counts.cancelados,
+        ignorados:    counts.ignorados,
       });
       setMode('results');
     } catch (err) {
@@ -196,28 +209,21 @@ export default function DevolucoesPage() {
     <div className="flex flex-col min-h-screen bg-charme-bg">
       <Header />
       <main className="flex flex-1 flex-col items-center justify-center px-6 py-10">
-        {mode === 'form' && (
-          <DevolucoesForm onSubmit={handleSubmit} loading={loading} />
-        )}
+        {mode === 'form' && <DevolucoesForm onSubmit={handleSubmit} loading={loading} />}
         {mode === 'processing' && (
           <DevolucoesProgress
-            fase={fase} fase1Done={fase1Done} resumo={resumoFase1}
+            fase={fase} fase1Done={fase1Done} totalEncontrados={totalEncontrados}
             batchAtual={batchAtual} totalBatches={totalBatches}
-            pedidosProcessados={pedidosProcessados} totalPedidos={totalPedidos}
+            pedidosProcessados={pedidosProcessados}
+            countVendidos={countVendidos} countDevolvidos={countDevolvidos} countCancelados={countCancelados}
             onCancelar={handleCancelar}
           />
         )}
         {mode === 'results' && resumoGeral && (
           <DevolucoesResults
-            vendidosItems={vendidosItems}
-            devolvidosItems={devolvidosItems}
-            canceladosItems={canceladosItems}
-            pedidoLojas={pedidoLojas}
-            lojas={lojas}
-            resumo={resumoGeral}
-            periodo={periodo}
-            dateFrom={periodo.from}
-            dateTo={periodo.to}
+            items={allItems} pedidoLojas={pedidoLojas} lojas={lojas}
+            resumo={resumoGeral} periodo={periodo}
+            dateFrom={periodo.from} dateTo={periodo.to}
           />
         )}
       </main>

@@ -3,6 +3,14 @@
 import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 
+export interface RawItem {
+  codigo: string;
+  descricao: string;
+  quantidade: number;
+  pedidoId: number;
+  tipo: 'vendido' | 'devolvido' | 'cancelado';
+}
+
 export interface SKUResult {
   sku: string;
   name: string;
@@ -14,13 +22,6 @@ export interface SKUResult {
   taxaCancelamento: number;
 }
 
-export interface RawItem {
-  codigo: string;
-  descricao: string;
-  quantidade: number;
-  pedidoId: number;
-}
-
 type SortKey = 'qtdTotalVendido' | 'taxaDevolucao' | 'taxaCancelamento';
 type ViewMode = 'sku' | 'tipo';
 type TopN = 10 | 30 | 50 | 100 | 'all';
@@ -30,13 +31,11 @@ interface ResumoGeral {
   verificados: number;
   devolvidos: number;
   cancelados: number;
-  descartados: number;
+  ignorados: number;
 }
 
 interface Props {
-  vendidosItems: RawItem[];
-  devolvidosItems: RawItem[];
-  canceladosItems: RawItem[];
+  items: RawItem[];
   pedidoLojas: Record<string, string>;
   lojas: string[];
   resumo: ResumoGeral;
@@ -80,9 +79,7 @@ function getTipo(name: string): string {
 const MIN_VENDAS = 5;
 
 function aggregate(
-  vendidos: RawItem[],
-  devolvidos: RawItem[],
-  cancelados: RawItem[],
+  items: RawItem[],
   pedidoLojas: Record<string, string>,
   selectedLojas: string[],
   allLojas: boolean,
@@ -100,35 +97,32 @@ function aggregate(
     return map.get(item.codigo)!;
   }
 
-  function allowed(item: RawItem) {
-    if (allLojas) return true;
-    const loja = pedidoLojas[String(item.pedidoId)] ?? 'Sem canal';
-    return selectedLojas.includes(loja);
+  for (const i of items) {
+    if (!allLojas) {
+      const loja = pedidoLojas[String(i.pedidoId)] ?? 'Sem canal';
+      if (!selectedLojas.includes(loja)) continue;
+    }
+    const r = get(i);
+    if (i.tipo === 'vendido')    r.qtdVerificado += i.quantidade;
+    else if (i.tipo === 'devolvido')  r.qtdDevolvido  += i.quantidade;
+    else if (i.tipo === 'cancelado')  r.qtdCancelado  += i.quantidade;
   }
-
-  for (const i of vendidos)   if (allowed(i)) get(i).qtdVerificado += i.quantidade;
-  for (const i of devolvidos) if (allowed(i)) { const r = get(i); r.qtdDevolvido += i.quantidade; }
-  for (const i of cancelados) if (allowed(i)) { const r = get(i); r.qtdCancelado += i.quantidade; }
 
   return Array.from(map.values())
     .map(r => {
-      r.qtdTotalVendido = r.qtdVerificado + r.qtdDevolvido + r.qtdCancelado;
-      r.taxaDevolucao   = r.qtdTotalVendido > 0 ? (r.qtdDevolvido / r.qtdTotalVendido) * 100 : 0;
+      r.qtdTotalVendido  = r.qtdVerificado + r.qtdDevolvido + r.qtdCancelado;
+      r.taxaDevolucao    = r.qtdTotalVendido > 0 ? (r.qtdDevolvido / r.qtdTotalVendido) * 100 : 0;
       r.taxaCancelamento = r.qtdTotalVendido > 0 ? (r.qtdCancelado / r.qtdTotalVendido) * 100 : 0;
       return r;
     })
     .filter(r => r.qtdTotalVendido >= MIN_VENDAS)
-    .sort((a, b) => b.qtdTotalVendido - a.qtdTotalVendido); // padrão: mais vendidos primeiro
+    .sort((a, b) => b.qtdTotalVendido - a.qtdTotalVendido);
 }
 
 interface GrupoTipo {
   nome: string;
-  qtdTotalVendido: number;
-  qtdDevolvido: number;
-  qtdCancelado: number;
-  taxaDevolucao: number;
-  taxaCancelamento: number;
-  numSkus: number;
+  qtdTotalVendido: number; qtdDevolvido: number; qtdCancelado: number;
+  taxaDevolucao: number; taxaCancelamento: number; numSkus: number;
 }
 
 function groupByTipo(skus: SKUResult[]): GrupoTipo[] {
@@ -142,35 +136,27 @@ function groupByTipo(skus: SKUResult[]): GrupoTipo[] {
     g.qtdCancelado    += r.qtdCancelado;
     g.numSkus++;
   }
-  return Array.from(map.values()).map(g => ({
-    ...g,
-    taxaDevolucao:    g.qtdTotalVendido > 0 ? (g.qtdDevolvido / g.qtdTotalVendido) * 100 : 0,
-    taxaCancelamento: g.qtdTotalVendido > 0 ? (g.qtdCancelado / g.qtdTotalVendido) * 100 : 0,
-  })).sort((a, b) => b.qtdTotalVendido - a.qtdTotalVendido);
+  return Array.from(map.values())
+    .map(g => ({
+      ...g,
+      taxaDevolucao:    g.qtdTotalVendido > 0 ? (g.qtdDevolvido / g.qtdTotalVendido) * 100 : 0,
+      taxaCancelamento: g.qtdTotalVendido > 0 ? (g.qtdCancelado / g.qtdTotalVendido) * 100 : 0,
+    }))
+    .sort((a, b) => b.qtdTotalVendido - a.qtdTotalVendido);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function indicador(taxa: number) {
-  if (taxa > 5) return '🔴';
-  if (taxa >= 3) return '🟡';
-  return '🟢';
-}
+function indicador(taxa: number) { return taxa > 5 ? '🔴' : taxa >= 3 ? '🟡' : '🟢'; }
 function fmt(n: number) { return n.toLocaleString('pt-BR'); }
-function fmtDate(iso: string) {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y.slice(2)}`;
-}
+function fmtDate(iso: string) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y.slice(2)}`; }
 
 function exportXlsx(data: SKUResult[], periodo: { from: string; to: string }) {
   const rows = data.map(r => ({
     SKU: r.sku, Produto: r.name,
-    'Total Vendido': r.qtdTotalVendido,
-    Verificado: r.qtdVerificado,
-    Devolvido: r.qtdDevolvido,
-    'Taxa Devolução (%)': +r.taxaDevolucao.toFixed(2),
-    Cancelado: r.qtdCancelado,
-    'Taxa Cancelamento (%)': +r.taxaCancelamento.toFixed(2),
+    'Total Vendido': r.qtdTotalVendido, Verificado: r.qtdVerificado,
+    Devolvido: r.qtdDevolvido, 'Taxa Devolução (%)': +r.taxaDevolucao.toFixed(2),
+    Cancelado: r.qtdCancelado, 'Taxa Cancelamento (%)': +r.taxaCancelamento.toFixed(2),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -188,12 +174,9 @@ const TOP_N_OPTIONS: { label: string; value: TopN }[] = [
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function DevolucoesResults({
-  vendidosItems, devolvidosItems, canceladosItems,
-  pedidoLojas, lojas, resumo, periodo, dateFrom, dateTo,
-}: Props) {
+export function DevolucoesResults({ items, pedidoLojas, lojas, resumo, periodo, dateFrom, dateTo }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('qtdTotalVendido');
-  const [topN, setTopN] = useState<TopN>('all');
+  const [topN, setTopN] = useState<TopN>(50);
   const [viewMode, setViewMode] = useState<ViewMode>('sku');
   const [busca, setBusca] = useState('');
   const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
@@ -205,9 +188,28 @@ export function DevolucoesResults({
 
   // Agregação reativa ao filtro de loja
   const allSkus = useMemo(
-    () => aggregate(vendidosItems, devolvidosItems, canceladosItems, pedidoLojas, selectedLojas, allLojas),
-    [vendidosItems, devolvidosItems, canceladosItems, pedidoLojas, selectedLojas, allLojas]
+    () => aggregate(items, pedidoLojas, selectedLojas, allLojas),
+    [items, pedidoLojas, selectedLojas, allLojas]
   );
+
+  // Resumo filtrado por loja (recalcula quando filtra)
+  const resumoFiltrado = useMemo(() => {
+    if (allLojas) return resumo;
+    const filteredItems = items.filter(i => {
+      const loja = pedidoLojas[String(i.pedidoId)] ?? 'Sem canal';
+      return selectedLojas.includes(loja);
+    });
+    const pedidosFiltrados = new Set(filteredItems.map(i => i.pedidoId));
+    const counts = { vendidos: 0, devolvidos: 0, cancelados: 0 };
+    for (const id of pedidosFiltrados) {
+      const tipo = filteredItems.find(i => i.pedidoId === id)?.tipo;
+      if (tipo === 'vendido') counts.vendidos++;
+      else if (tipo === 'devolvido') counts.devolvidos++;
+      else if (tipo === 'cancelado') counts.cancelados++;
+    }
+    const total = counts.vendidos + counts.devolvidos + counts.cancelados;
+    return { totalPedidos: total, verificados: counts.vendidos, devolvidos: counts.devolvidos, cancelados: counts.cancelados, ignorados: 0 };
+  }, [items, pedidoLojas, selectedLojas, allLojas, resumo]);
 
   // Ordenação + busca + top N
   const skusFiltrados = useMemo(() => {
@@ -221,15 +223,13 @@ export function DevolucoesResults({
 
   const tipoGrupos = useMemo(() => groupByTipo(skusFiltrados), [skusFiltrados]);
 
-  const totalGeral = resumo.verificados + resumo.devolvidos + resumo.cancelados;
-  const pctDev = totalGeral > 0 ? ((resumo.devolvidos / totalGeral) * 100).toFixed(1) : '0,0';
-  const pctCan = totalGeral > 0 ? ((resumo.cancelados / totalGeral) * 100).toFixed(1) : '0,0';
-  const pctVer = totalGeral > 0 ? ((resumo.verificados / totalGeral) * 100).toFixed(1) : '0,0';
+  const totalGeral = resumoFiltrado.verificados + resumoFiltrado.devolvidos + resumoFiltrado.cancelados;
+  const pctDev = totalGeral > 0 ? ((resumoFiltrado.devolvidos / totalGeral) * 100).toFixed(1) : '0,0';
+  const pctCan = totalGeral > 0 ? ((resumoFiltrado.cancelados / totalGeral) * 100).toFixed(1) : '0,0';
+  const pctVer = totalGeral > 0 ? ((resumoFiltrado.verificados / totalGeral) * 100).toFixed(1) : '0,0';
 
   function toggleLoja(loja: string) {
-    setSelectedLojas(prev =>
-      prev.includes(loja) ? prev.filter(l => l !== loja) : [...prev, loja]
-    );
+    setSelectedLojas(prev => prev.includes(loja) ? prev.filter(l => l !== loja) : [...prev, loja]);
   }
 
   async function handleDebug() {
@@ -241,14 +241,15 @@ export function DevolucoesResults({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dateFrom, dateTo }),
       });
-      const data = await res.json();
-      setDebugData(JSON.stringify(data, null, 2));
+      setDebugData(JSON.stringify(await res.json(), null, 2));
     } catch (e) {
-      setDebugData('Erro ao chamar debug: ' + String(e));
+      setDebugData('Erro: ' + String(e));
     } finally {
       setDebugLoading(false);
     }
   }
+
+  const lojaLabel = allLojas ? 'Todas as lojas' : `${selectedLojas.length} loja${selectedLojas.length > 1 ? 's' : ''}`;
 
   return (
     <div className="w-full max-w-5xl">
@@ -257,20 +258,21 @@ export function DevolucoesResults({
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-zinc-700">
           📦 Devoluções &amp; Cancelamentos — {fmtDate(periodo.from)} a {fmtDate(periodo.to)}
+          {!allLojas && <span className="ml-2 text-charme">· {lojaLabel}</span>}
         </h2>
         <p className="text-xs text-zinc-400 mt-0.5">
-          {fmt(resumo.totalPedidos)} pedidos analisados
-          {resumo.descartados > 0 && ` (excl. ${resumo.descartados} "Em troca")`}
+          {fmt(resumoFiltrado.totalPedidos)} pedidos analisados
+          {resumo.ignorados > 0 && ` (excl. ${resumo.ignorados} sem classificação)`}
         </p>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — recalculados por loja */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
-          { label: 'Total Pedidos', value: fmt(resumo.totalPedidos), sub: '', color: '' },
-          { label: 'Verificados',   value: fmt(resumo.verificados),  sub: `${pctVer}%`, color: 'text-green-600' },
-          { label: 'Devolvidos',    value: fmt(resumo.devolvidos),   sub: `${pctDev}%`, color: 'text-red-500' },
-          { label: 'Cancelados',    value: fmt(resumo.cancelados),   sub: `${pctCan}%`, color: 'text-amber-500' },
+          { label: 'Total Pedidos', value: fmt(resumoFiltrado.totalPedidos), sub: '', color: '' },
+          { label: 'Verificados',   value: fmt(resumoFiltrado.verificados),  sub: `${pctVer}%`, color: 'text-green-600' },
+          { label: 'Devolvidos',    value: fmt(resumoFiltrado.devolvidos),   sub: `${pctDev}%`, color: 'text-red-500' },
+          { label: 'Cancelados',    value: fmt(resumoFiltrado.cancelados),   sub: `${pctCan}%`, color: 'text-amber-500' },
         ].map(k => (
           <div key={k.label} className="bg-white border border-charme-border rounded-xl px-4 py-3">
             <p className="text-[10px] text-zinc-400 uppercase tracking-wide mb-0.5">{k.label}</p>
@@ -280,62 +282,45 @@ export function DevolucoesResults({
         ))}
       </div>
 
-      {/* Barra de controles */}
-      <div className="flex flex-col gap-3 mb-3">
+      {/* Controles */}
+      <div className="flex flex-col gap-2 mb-3">
 
-        {/* Linha 1: view toggle + top N */}
+        {/* Linha 1: view + top N */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Toggle Por SKU / Por Tipo */}
           <div className="flex items-center bg-zinc-100 rounded-lg p-0.5">
             {(['sku', 'tipo'] as ViewMode[]).map(v => (
               <button key={v} onClick={() => setViewMode(v)}
-                className={`h-7 px-3 text-xs font-medium rounded-md transition-colors ${
-                  viewMode === v ? 'bg-white text-charme shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-                }`}>
+                className={`h-7 px-3 text-xs font-medium rounded-md transition-colors ${viewMode === v ? 'bg-white text-charme shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>
                 {v === 'sku' ? 'Por SKU' : 'Por Tipo'}
               </button>
             ))}
           </div>
-
-          {/* Top N */}
-          <div className="flex items-center gap-1">
-            {TOP_N_OPTIONS.map(o => (
-              <button key={o.value} onClick={() => setTopN(o.value)}
-                className={`h-7 px-2.5 text-xs rounded-lg border transition-colors ${
-                  topN === o.value
-                    ? 'bg-charme text-white border-charme'
-                    : 'bg-white text-zinc-500 border-zinc-200 hover:border-charme/40'
-                }`}>
-                {o.label}
-              </button>
-            ))}
-          </div>
+          {TOP_N_OPTIONS.map(o => (
+            <button key={o.value} onClick={() => setTopN(o.value)}
+              className={`h-7 px-2.5 text-xs rounded-lg border transition-colors ${topN === o.value ? 'bg-charme text-white border-charme' : 'bg-white text-zinc-500 border-zinc-200 hover:border-charme/40'}`}>
+              {o.label}
+            </button>
+          ))}
         </div>
 
-        {/* Linha 2: lojas + ordenar + busca + export */}
+        {/* Linha 2: loja + ordenar + busca + export */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Filtro lojas */}
           {lojas.length > 0 && (
             <div className="relative">
-              <button
-                onClick={() => setShowLojaFilter(v => !v)}
-                className={`h-8 px-3 text-xs rounded-lg border transition-colors ${
-                  !allLojas ? 'bg-charme text-white border-charme' : 'bg-white text-zinc-500 border-zinc-200 hover:border-charme/40'
-                }`}
-              >
-                {allLojas ? 'Todas as lojas' : `${selectedLojas.length} loja${selectedLojas.length > 1 ? 's' : ''}`} ▾
+              <button onClick={() => setShowLojaFilter(v => !v)}
+                className={`h-8 px-3 text-xs rounded-lg border transition-colors ${!allLojas ? 'bg-charme text-white border-charme' : 'bg-white text-zinc-500 border-zinc-200 hover:border-charme/40'}`}>
+                {lojaLabel} ▾
               </button>
               {showLojaFilter && (
-                <div className="absolute left-0 top-10 z-20 bg-white border border-zinc-200 rounded-xl shadow-lg p-3 min-w-[240px]">
-                  <button onClick={() => setSelectedLojas([])}
-                    className="text-xs text-charme hover:underline mb-2 block">
+                <div className="absolute left-0 top-10 z-20 bg-white border border-zinc-200 rounded-xl shadow-lg p-3 min-w-[260px]">
+                  <button onClick={() => setSelectedLojas([])} className="text-xs text-charme hover:underline mb-2 block">
                     Limpar (todas)
                   </button>
                   {lojas.map(loja => (
                     <label key={loja} className="flex items-center gap-2 py-1 cursor-pointer">
-                      <input type="checkbox" checked={selectedLojas.includes(loja)}
-                        onChange={() => toggleLoja(loja)} className="accent-charme" />
-                      <span className="text-xs text-zinc-700 truncate max-w-[200px]">{loja}</span>
+                      <input type="checkbox" checked={selectedLojas.includes(loja)} onChange={() => toggleLoja(loja)} className="accent-charme" />
+                      <span className="text-xs text-zinc-700 truncate max-w-[220px]" title={loja}>{loja}</span>
                     </label>
                   ))}
                 </div>
@@ -343,24 +328,22 @@ export function DevolucoesResults({
             </div>
           )}
 
-          {/* Ordenar (só na visão SKU) */}
+          {/* Ordenar — só na visão SKU */}
           {viewMode === 'sku' && (
             <>
               <span className="text-xs text-zinc-400">Ordenar:</span>
-              {(['qtdTotalVendido', 'taxaDevolucao', 'taxaCancelamento'] as SortKey[]).map(k => (
+              {([['qtdTotalVendido', 'Mais Vendidos'], ['taxaDevolucao', 'Taxa Devol.'], ['taxaCancelamento', 'Taxa Cancel.']] as [SortKey, string][]).map(([k, label]) => (
                 <button key={k} onClick={() => setSortKey(k)}
-                  className={`h-7 px-2.5 text-xs rounded-lg border transition-colors ${
-                    sortKey === k ? 'bg-charme text-white border-charme' : 'bg-white text-zinc-500 border-zinc-200 hover:border-charme/40'
-                  }`}>
-                  {k === 'qtdTotalVendido' ? 'Mais Vendidos' : k === 'taxaDevolucao' ? 'Taxa Devol.' : 'Taxa Cancel.'}{sortKey === k && ' ▼'}
+                  className={`h-7 px-2.5 text-xs rounded-lg border transition-colors ${sortKey === k ? 'bg-charme text-white border-charme' : 'bg-white text-zinc-500 border-zinc-200 hover:border-charme/40'}`}>
+                  {label}{sortKey === k && ' ▼'}
                 </button>
               ))}
             </>
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <input type="text" placeholder="Buscar SKU ou produto..."
-              value={busca} onChange={e => setBusca(e.target.value)}
+            <input type="text" placeholder="Buscar SKU ou produto..." value={busca}
+              onChange={e => setBusca(e.target.value)}
               className="h-8 rounded-lg border border-zinc-200 px-3 text-xs text-zinc-700 focus:outline-none focus:border-charme/40 w-44" />
             <button onClick={() => exportXlsx(skusFiltrados, periodo)}
               className="h-8 px-3 bg-white border border-charme-border text-charme text-xs font-medium rounded-lg hover:bg-charme/5 transition-colors">
@@ -391,20 +374,18 @@ export function DevolucoesResults({
                 <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">
                   {busca ? `Nenhum resultado para "${busca}"` : 'Nenhum SKU com 5+ vendas no período.'}
                 </td></tr>
-              ) : (
-                skusFiltrados.map(r => (
-                  <tr key={r.sku} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
-                    <td className="px-4 py-2.5 text-center">{indicador(r.taxaDevolucao)}</td>
-                    <td className="px-4 py-2.5 font-mono text-zinc-600">{r.sku}</td>
-                    <td className="px-4 py-2.5 text-zinc-700 max-w-[180px] truncate" title={r.name}>{r.name}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdTotalVendido)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdDevolvido)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-charme">{r.taxaDevolucao.toFixed(1)}%</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdCancelado)}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">{r.taxaCancelamento.toFixed(1)}%</td>
-                  </tr>
-                ))
-              )}
+              ) : skusFiltrados.map(r => (
+                <tr key={r.sku} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
+                  <td className="px-4 py-2.5 text-center">{indicador(r.taxaDevolucao)}</td>
+                  <td className="px-4 py-2.5 font-mono text-zinc-600">{r.sku}</td>
+                  <td className="px-4 py-2.5 text-zinc-700 max-w-[180px] truncate" title={r.name}>{r.name}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdTotalVendido)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdDevolvido)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-charme">{r.taxaDevolucao.toFixed(1)}%</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdCancelado)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">{r.taxaCancelamento.toFixed(1)}%</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -417,7 +398,7 @@ export function DevolucoesResults({
             <thead>
               <tr className="border-b border-zinc-100 text-zinc-400 uppercase tracking-wide text-[10px]">
                 <th className="px-4 py-3 text-left w-8"></th>
-                <th className="px-4 py-3 text-left">Tipo de Produto</th>
+                <th className="px-4 py-3 text-left">Tipo</th>
                 <th className="px-4 py-3 text-right">SKUs</th>
                 <th className="px-4 py-3 text-right">Total Vendido</th>
                 <th className="px-4 py-3 text-right">Devol.</th>
@@ -427,10 +408,9 @@ export function DevolucoesResults({
               </tr>
             </thead>
             <tbody>
-              {tipoGrupos.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Nenhum grupo identificado.</td></tr>
-              ) : (
-                tipoGrupos.map(g => (
+              {tipoGrupos.length === 0
+                ? <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Nenhum grupo identificado.</td></tr>
+                : tipoGrupos.map(g => (
                   <tr key={g.nome} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
                     <td className="px-4 py-2.5 text-center">{indicador(g.taxaDevolucao)}</td>
                     <td className="px-4 py-2.5 font-medium text-zinc-700">{g.nome}</td>
@@ -441,8 +421,7 @@ export function DevolucoesResults({
                     <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(g.qtdCancelado)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">{g.taxaCancelamento.toFixed(1)}%</td>
                   </tr>
-                ))
-              )}
+                ))}
             </tbody>
           </table>
         </div>
@@ -450,14 +429,10 @@ export function DevolucoesResults({
 
       {/* Legenda */}
       <div className="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-zinc-400">
-        <span>🔴 Devol. &gt; 5%</span>
-        <span>🟡 3–5%</span>
-        <span>🟢 &lt; 3%</span>
+        <span>🔴 Devol. &gt; 5%</span><span>🟡 3–5%</span><span>🟢 &lt; 3%</span>
         <span className="ml-auto">SKUs com &lt; 5 vendas ocultados</span>
       </div>
-      <p className="text-[11px] text-amber-600 mt-1">
-        ⚠️ Últimos 30 dias do período podem ter taxas subestimadas.
-      </p>
+      <p className="text-[11px] text-amber-600 mt-1">⚠️ Últimos 30 dias do período podem ter taxas subestimadas.</p>
 
       {/* Debug discreto */}
       <div className="mt-6 pt-4 border-t border-zinc-100">
