@@ -33,11 +33,28 @@ async function listAllIds(dateFrom: string, dateTo: string, idLoja?: number): Pr
 
 export async function POST(req: Request) {
   try {
-    const { dateFrom, dateTo, idLoja } = await req.json() as { dateFrom?: string; dateTo?: string; idLoja?: number };
+    const { dateFrom, dateTo, idLoja, idLojas } = await req.json() as {
+      dateFrom?: string;
+      dateTo?: string;
+      idLoja?: number;
+      idLojas?: number[];
+    };
     if (!dateFrom || !dateTo) {
       return NextResponse.json({ error: 'dateFrom e dateTo obrigatórios' }, { status: 400 });
     }
-    const allIds = await listAllIds(dateFrom, dateTo, idLoja);
+
+    const ids = idLojas && idLojas.length > 0 ? idLojas : (idLoja ? [idLoja] : [undefined]);
+
+    // Busca para cada canal e combina (sem duplicatas)
+    const seen = new Set<number>();
+    const allIds: number[] = [];
+    for (const id of ids) {
+      const partial = await listAllIds(dateFrom, dateTo, id);
+      for (const pid of partial) {
+        if (!seen.has(pid)) { seen.add(pid); allIds.push(pid); }
+      }
+    }
+
     return NextResponse.json({ allIds, totalIds: allIds.length });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erro desconhecido';

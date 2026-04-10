@@ -66,7 +66,7 @@ export default function DevolucoesPage() {
     cancelRef.current = false;
   }, []);
 
-  async function handleSubmit(dateFrom: string, dateTo: string, idLoja: number, canal: string) {
+  async function handleSubmit(dateFrom: string, dateTo: string, idLojas: number[], canal: string) {
     resetState();
     setPeriodo({ from: dateFrom, to: dateTo });
     setNomeCanal(canal);
@@ -79,7 +79,7 @@ export default function DevolucoesPage() {
       const fase1Res = await fetch('/api/avaliacoes/devolucoes/listar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dateFrom, dateTo, idLoja }),
+        body: JSON.stringify({ dateFrom, dateTo, idLojas }),
       });
       if (!fase1Res.ok) {
         const err = await fase1Res.json().catch(() => ({ error: `HTTP ${fase1Res.status}` }));

@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 
-interface Canal { id: number; nome: string }
+interface Canal { id: number; ids: number[]; nome: string }
 
 interface Props {
-  onSubmit: (dateFrom: string, dateTo: string, idLoja: number, nomeCanal: string) => void;
+  onSubmit: (dateFrom: string, dateTo: string, idLojas: number[], nomeCanal: string) => void;
   loading: boolean;
 }
 
@@ -38,7 +38,7 @@ export function DevolucoesForm({ onSubmit, loading }: Props) {
     e.preventDefault();
     if (!canSubmit || idLoja === null) return;
     const canal = canais.find(c => c.id === idLoja);
-    onSubmit(from, to, idLoja, canal?.nome ?? String(idLoja));
+    onSubmit(from, to, canal?.ids ?? [idLoja], canal?.nome ?? String(idLoja));
   }
 
   return (
