@@ -11,14 +11,22 @@ interface BlingPedidoLista {
   canal?: { id?: number; descricao?: string; nome?: string };
 }
 
-function extrairNomeLoja(raw: Record<string, unknown>): string | null {
-  const loja = raw.loja as Record<string, unknown> | undefined;
-  const canal = raw.canal as Record<string, unknown> | undefined;
+function extrairNomeDaResposta(raw: Record<string, unknown>): string | null {
+  // Tenta todos os caminhos conhecidos de nome em respostas do Bling v3
+  const loja   = raw.loja   as Record<string, unknown> | undefined;
+  const canal  = raw.canal  as Record<string, unknown> | undefined;
+  const un     = loja?.unidadeNegocio as Record<string, unknown> | undefined;
+
   const nome =
-    (loja?.nome as string | undefined) ||
+    (raw.descricao   as string | undefined) ||
+    (raw.nome        as string | undefined) ||
+    (loja?.nome      as string | undefined) ||
     (loja?.descricao as string | undefined) ||
-    (canal?.nome as string | undefined) ||
-    (canal?.descricao as string | undefined);
+    (canal?.nome     as string | undefined) ||
+    (canal?.descricao as string | undefined) ||
+    (un?.nome        as string | undefined) ||
+    (un?.descricao   as string | undefined);
+
   return nome?.trim() || null;
 }
 
@@ -58,25 +66,44 @@ export async function GET() {
       await new Promise(r => setTimeout(r, 350));
     }
 
-    // Para canais sem nome na listagem, buscar detalhe de um pedido para resolver o nome real
+    // Para canais sem nome na listagem, tentar 3 fontes em sequência
     const fallbackIds = [...lojasMap.entries()]
       .filter(([id, nome]) => nome === `Canal ${id}`)
       .map(([id]) => id);
 
     for (const canalId of fallbackIds) {
-      const orderId = canalSampleOrder.get(canalId);
-      if (!orderId) continue;
-      try {
-        const detail = await blingFetch(`/pedidos/vendas/${orderId}`) as { data?: Record<string, unknown> };
-        const raw = detail?.data;
-        if (raw) {
-          const nomeReal = extrairNomeLoja(raw);
-          if (nomeReal) lojasMap.set(canalId, nomeReal);
-        }
-        await new Promise(r => setTimeout(r, 350));
-      } catch {
-        // mantém o fallback se falhar
+      let resolved = false;
+
+      // 1) Tentar endpoint direto da loja
+      const lojaEndpoints = [`/lojas/${canalId}`, `/canais-venda/${canalId}`];
+      for (const ep of lojaEndpoints) {
+        if (resolved) break;
+        try {
+          const res = await blingFetch(ep) as { data?: Record<string, unknown> };
+          const nomeReal = res?.data ? extrairNomeDaResposta(res.data) : null;
+          if (nomeReal) { lojasMap.set(canalId, nomeReal); resolved = true; }
+          await new Promise(r => setTimeout(r, 350));
+        } catch { /* tenta próximo */ }
       }
+
+      // 2) Fallback: detalhe de um pedido desse canal
+      if (!resolved) {
+        const orderId = canalSampleOrder.get(canalId);
+        if (orderId) {
+          try {
+            const detail = await blingFetch(`/pedidos/vendas/${orderId}`) as { data?: Record<string, unknown> };
+            const raw = detail?.data;
+            if (raw) {
+              const nomeReal = extrairNomeDaResposta(raw);
+              if (nomeReal) { lojasMap.set(canalId, nomeReal); resolved = true; }
+            }
+            await new Promise(r => setTimeout(r, 350));
+          } catch { /* mantém o fallback */ }
+        }
+      }
+
+      // 3) Se ainda sem nome: marcar como "Loja ${id}" (mais legível que "Canal ${id}")
+      if (!resolved) lojasMap.set(canalId, `Loja ${canalId}`);
     }
 
     const lojas = [...lojasMap.entries()]
