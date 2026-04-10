@@ -1,25 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+interface Canal { id: number; nome: string }
 
 interface Props {
-  onSubmit: (dateFrom: string, dateTo: string) => void;
+  onSubmit: (dateFrom: string, dateTo: string, idLoja: number, nomeCanal: string) => void;
   loading: boolean;
 }
 
 export function DevolucoesForm({ onSubmit, loading }: Props) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [canais, setCanais] = useState<Canal[]>([]);
+  const [idLoja, setIdLoja] = useState<number | null>(null);
+  const [loadingCanais, setLoadingCanais] = useState(true);
+  const [erroCanais, setErroCanais] = useState('');
 
   const today = new Date();
   today.setDate(today.getDate() - 1);
   const maxDate = today.toISOString().split('T')[0];
 
-  const canSubmit = from && to && from <= to && !loading;
+  useEffect(() => {
+    fetch('/api/avaliacoes/devolucoes/canais')
+      .then(r => r.json())
+      .then((data: { lojas?: Canal[]; error?: string }) => {
+        if (data.error) { setErroCanais(data.error); return; }
+        setCanais(data.lojas ?? []);
+      })
+      .catch(() => setErroCanais('Não foi possível carregar os canais.'))
+      .finally(() => setLoadingCanais(false));
+  }, []);
+
+  const canSubmit = from && to && from <= to && idLoja !== null && !loading && !loadingCanais;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (canSubmit) onSubmit(from, to);
+    if (!canSubmit || idLoja === null) return;
+    const canal = canais.find(c => c.id === idLoja);
+    onSubmit(from, to, idLoja, canal?.nome ?? String(idLoja));
   }
 
   return (
@@ -32,6 +51,30 @@ export function DevolucoesForm({ onSubmit, loading }: Props) {
       </h2>
       <p className="text-xs text-zinc-400 mb-6">Fonte: Bling v3</p>
 
+      {/* Seletor de canal */}
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-zinc-600 mb-1">Canal de venda</label>
+        {loadingCanais ? (
+          <div className="h-9 rounded-lg border border-zinc-200 flex items-center px-3 text-xs text-zinc-400">
+            Carregando canais…
+          </div>
+        ) : erroCanais ? (
+          <div className="text-xs text-red-500">{erroCanais}</div>
+        ) : (
+          <select
+            value={idLoja ?? ''}
+            onChange={e => setIdLoja(e.target.value ? Number(e.target.value) : null)}
+            className="w-full h-9 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-700 focus:outline-none focus:border-charme/40 bg-white"
+          >
+            <option value="">Selecione um canal…</option>
+            {canais.map(c => (
+              <option key={c.id} value={c.id}>{c.nome}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* Período */}
       <div className="flex gap-3 mb-4">
         <div className="flex-1">
           <label className="block text-xs font-medium text-zinc-600 mb-1">De</label>

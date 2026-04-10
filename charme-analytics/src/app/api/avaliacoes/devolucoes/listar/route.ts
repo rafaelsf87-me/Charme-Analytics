@@ -4,7 +4,7 @@
 import { blingFetch } from '@/lib/bling-auth';
 import { NextResponse } from 'next/server';
 
-async function listAllIds(dateFrom: string, dateTo: string): Promise<number[]> {
+async function listAllIds(dateFrom: string, dateTo: string, idLoja?: number): Promise<number[]> {
   const allIds: number[] = [];
   let pagina = 1;
   const limite = 100;
@@ -14,6 +14,7 @@ async function listAllIds(dateFrom: string, dateTo: string): Promise<number[]> {
       pagina: String(pagina), limite: String(limite),
       dataInicial: dateFrom, dataFinal: dateTo,
     });
+    if (idLoja) params.set('idLoja', String(idLoja));
 
     const data = await blingFetch(`/pedidos/vendas?${params}`) as {
       data?: Array<{ id: number }>;
@@ -32,11 +33,11 @@ async function listAllIds(dateFrom: string, dateTo: string): Promise<number[]> {
 
 export async function POST(req: Request) {
   try {
-    const { dateFrom, dateTo } = await req.json() as { dateFrom?: string; dateTo?: string };
+    const { dateFrom, dateTo, idLoja } = await req.json() as { dateFrom?: string; dateTo?: string; idLoja?: number };
     if (!dateFrom || !dateTo) {
       return NextResponse.json({ error: 'dateFrom e dateTo obrigatórios' }, { status: 400 });
     }
-    const allIds = await listAllIds(dateFrom, dateTo);
+    const allIds = await listAllIds(dateFrom, dateTo, idLoja);
     return NextResponse.json({ allIds, totalIds: allIds.length });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erro desconhecido';

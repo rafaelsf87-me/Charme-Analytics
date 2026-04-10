@@ -34,6 +34,7 @@ export default function DevolucoesPage() {
   const [mode, setMode] = useState<Mode>('form');
   const [loading, setLoading] = useState(false);
   const [periodo, setPeriodo] = useState({ from: '', to: '' });
+  const [nomeCanal, setNomeCanal] = useState('');
 
   // Progresso
   const [fase, setFase] = useState<1 | 2>(1);
@@ -65,19 +66,20 @@ export default function DevolucoesPage() {
     cancelRef.current = false;
   }, []);
 
-  async function handleSubmit(dateFrom: string, dateTo: string) {
+  async function handleSubmit(dateFrom: string, dateTo: string, idLoja: number, canal: string) {
     resetState();
     setPeriodo({ from: dateFrom, to: dateTo });
+    setNomeCanal(canal);
     setLoading(true);
     setMode('processing');
 
     try {
-      // ── Fase 1: listar todos os IDs ─────────────────────────────────────────
+      // ── Fase 1: listar todos os IDs (filtrado por canal) ────────────────────
       setFase(1);
       const fase1Res = await fetch('/api/avaliacoes/devolucoes/listar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dateFrom, dateTo }),
+        body: JSON.stringify({ dateFrom, dateTo, idLoja }),
       });
       if (!fase1Res.ok) {
         const err = await fase1Res.json().catch(() => ({ error: `HTTP ${fase1Res.status}` }));
@@ -199,6 +201,9 @@ export default function DevolucoesPage() {
           <div className="flex items-center gap-2">
             <Image src="/bling_logo.png" alt="Bling" width={18} height={18} className="rounded" />
             <span className="font-semibold text-white text-sm">Devoluções &amp; Cancelamentos</span>
+            {nomeCanal && mode !== 'form' && (
+              <span className="text-white/50 text-sm">— {nomeCanal}</span>
+            )}
           </div>
         </div>
       </header>
