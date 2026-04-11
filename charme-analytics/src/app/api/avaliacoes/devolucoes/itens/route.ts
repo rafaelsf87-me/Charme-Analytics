@@ -26,7 +26,7 @@ export interface ItensResponse {
 // Ref: 0=Em Aberto, 1=Em Atendimento, 2=Atendido, 3/4=Cancelado,
 //      6=Em Digitação, 9=Verificado, 11=NF Emitida, 12=NF Enviada ao Mercado
 const SITUACAO_VALOR: Record<number, 'vendido' | 'cancelado' | 'ignorar'> = {
-  0:  'ignorar',   // Em Aberto
+  0:  'ignorar',   // Em Aberto (padrão) — pode ser sobrescrito por SITUACAO_ID
   1:  'ignorar',   // Em Atendimento
   2:  'vendido',   // Atendido
   3:  'cancelado', // Cancelado
@@ -37,7 +37,13 @@ const SITUACAO_VALOR: Record<number, 'vendido' | 'cancelado' | 'ignorar'> = {
   12: 'vendido',   // NF Enviada ao Mercado
 };
 
-function getSituacaoTipo(valor: number): 'vendido' | 'cancelado' | 'ignorar' {
+// Situações customizadas por ID (têm valor=0 mas significado específico)
+const SITUACAO_ID: Record<number, 'devolvido' | 'cancelado' | 'ignorar'> = {
+  141129: 'devolvido', // Devolução — ML Charme do Detalhe (confirmado pedido 864349)
+};
+
+function getSituacaoTipo(valor: number, id?: number): 'vendido' | 'devolvido' | 'cancelado' | 'ignorar' {
+  if (id !== undefined && SITUACAO_ID[id] !== undefined) return SITUACAO_ID[id];
   return SITUACAO_VALOR[valor] ?? 'ignorar';
 }
 
@@ -75,7 +81,7 @@ async function fetchOrder(id: number): Promise<{ tipo: 'vendido' | 'devolvido' |
     if (!raw) return null;
 
     const sit = raw.situacao;
-    const tipo = getSituacaoTipo(sit?.valor ?? -1);
+    const tipo = getSituacaoTipo(sit?.valor ?? -1, sit?.id);
     const loja = extrairLoja(raw);
 
     const items = (raw.itens ?? [])
