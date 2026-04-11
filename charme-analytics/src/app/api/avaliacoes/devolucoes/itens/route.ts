@@ -1,5 +1,6 @@
 // ─── Fase 2: Buscar detalhe, classificar e extrair itens ─────────────────────
-// O endpoint de detalhe retorna situacao.nome (texto) e loja.nome/descricao.
+// Bling v3 não retorna situacao.nome — usa situacao.valor (enum padrão) +
+// fallback para /situacoes/{id} para situações customizadas (ex: devolução).
 // Rate limit: 340ms entre calls (3 req/s). Batch size: 50.
 
 import { blingFetch } from '@/lib/bling-auth';
@@ -21,16 +22,47 @@ export interface ItensResponse {
   erros: number;
 }
 
+// Bling v3 situacao.valor → nome textual padrão
+const SITUACAO_VALOR: Record<number, string> = {
+  0: 'em aberto',
+  1: 'em atendimento',
+  2: 'atendido',
+  3: 'cancelado',
+  4: 'cancelado',
+  6: 'em digitacao',
+  9: 'verificado',
+};
+
+// Cache de situações customizadas: id → nome (por requisição/processo)
+const situacaoCache = new Map<number, string>();
+
+async function getSituacaoNome(id: number, valor: number): Promise<string> {
+  // 1) Mapeamento padrão pelo valor
+  if (SITUACAO_VALOR[valor] !== undefined) return SITUACAO_VALOR[valor];
+
+  // 2) Cache local
+  if (situacaoCache.has(id)) return situacaoCache.get(id)!;
+
+  // 3) Busca o nome da situação customizada na API
+  try {
+    const res = await blingFetch(`/situacoes/${id}`) as { data?: { nome?: string; descricao?: string } };
+    const nome = (res?.data?.nome ?? res?.data?.descricao ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    situacaoCache.set(id, nome);
+    return nome;
+  } catch {
+    return String(valor);
+  }
+}
+
 function norm(s: string) {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 function classificar(nome: string): 'vendido' | 'devolvido' | 'cancelado' | 'ignorar' {
   const n = norm(nome);
-  if (n.includes('verificado'))                            return 'vendido';
-  if (n.includes('devolucao') || n.includes('devolvido'))  return 'devolvido';
-  if (n.includes('cancelado'))                             return 'cancelado';
-  if (n.includes('troca'))                                 return 'ignorar';
+  if (n.includes('verificado') || n.includes('atendido')) return 'vendido';
+  if (n.includes('devolucao') || n.includes('devolvido')) return 'devolvido';
+  if (n.includes('cancelado'))                            return 'cancelado';
   return 'ignorar';
 }
 
@@ -51,7 +83,7 @@ async function fetchOrder(id: number): Promise<{ tipo: ReturnType<typeof classif
   try {
     const data = await blingFetch(`/pedidos/vendas/${id}`) as {
       data?: Record<string, unknown> & {
-        situacao?: { nome?: string; descricao?: string; valor?: unknown };
+        situacao?: { id?: number; valor?: number };
         itens?: Array<{ codigo?: string; descricao?: string; quantidade?: number; produto?: { codigo?: string } }>;
       };
     };
@@ -60,7 +92,7 @@ async function fetchOrder(id: number): Promise<{ tipo: ReturnType<typeof classif
     if (!raw) return null;
 
     const sit = raw.situacao;
-    const nomeSit = String(sit?.nome ?? sit?.descricao ?? sit?.valor ?? '');
+    const nomeSit = await getSituacaoNome(sit?.id ?? 0, sit?.valor ?? -1);
     const tipo = classificar(nomeSit);
     const loja = extrairLoja(raw);
 
