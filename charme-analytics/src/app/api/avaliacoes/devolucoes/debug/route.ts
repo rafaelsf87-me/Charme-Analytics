@@ -12,12 +12,19 @@ export async function POST(req: Request) {
       orderId?: number;
     };
 
-    // Modo direto: retorna estrutura bruta de um pedido específico
+    // Modo direto por número do pedido (número visível no Bling, não o ID interno)
     if (orderId) {
-      const detalhe = await blingFetch(`/pedidos/vendas/${orderId}`) as { data?: Record<string, unknown> };
+      const lista = await blingFetch(`/pedidos/vendas?numero=${orderId}&limite=5`) as { data?: Array<{ id: number }> };
+      const internalId = lista?.data?.[0]?.id;
+      if (!internalId) {
+        return NextResponse.json({ error: `Pedido número ${orderId} não encontrado`, lista_raw: lista });
+      }
+      await new Promise(r => setTimeout(r, 350));
+      const detalhe = await blingFetch(`/pedidos/vendas/${internalId}`) as { data?: Record<string, unknown> };
       const raw = detalhe?.data ?? {};
       return NextResponse.json({
-        pedido_id: orderId,
+        numero_pedido: orderId,
+        id_interno: internalId,
         situacao: raw.situacao ?? null,
         loja: raw.loja ?? null,
         intermediador: raw.intermediador ?? null,
