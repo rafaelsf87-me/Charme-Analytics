@@ -5,11 +5,26 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { dateFrom, dateTo, lojaId } = await req.json() as {
+    const { dateFrom, dateTo, lojaId, orderId } = await req.json() as {
       dateFrom?: string;
       dateTo?: string;
       lojaId?: number;
+      orderId?: number;
     };
+
+    // Modo direto: retorna estrutura bruta de um pedido específico
+    if (orderId) {
+      const detalhe = await blingFetch(`/pedidos/vendas/${orderId}`) as { data?: Record<string, unknown> };
+      const raw = detalhe?.data ?? {};
+      return NextResponse.json({
+        pedido_id: orderId,
+        situacao: raw.situacao ?? null,
+        loja: raw.loja ?? null,
+        intermediador: raw.intermediador ?? null,
+        data_pedido: raw.data ?? null,
+        full_raw: detalhe,
+      });
+    }
 
     if (!dateFrom || !dateTo) {
       return NextResponse.json({ error: 'dateFrom e dateTo obrigatórios' }, { status: 400 });
