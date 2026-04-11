@@ -75,13 +75,27 @@ export async function POST(req: Request) {
       try { canalVendaEndpoint = await blingFetch(`/canais-venda/${primeiraLoja}`); } catch (e) { canalVendaEndpoint = `ERRO: ${String(e)}`; }
     }
 
+    // 5) Situação do primeiro pedido
+    const primeiraSituacaoId = (listaRaw?.data?.[0] as Record<string, unknown> & { situacao?: { id?: number } } | undefined)?.situacao?.id;
+    let situacaoEndpoint: unknown = null;
+    if (primeiraSituacaoId) {
+      try { situacaoEndpoint = await blingFetch(`/situacoes/${primeiraSituacaoId}`); } catch (e) { situacaoEndpoint = `ERRO: ${String(e)}`; }
+    }
+
+    // 6) Lista todas as situações disponíveis
+    let todasSituacoes: unknown = null;
+    try { todasSituacoes = await blingFetch(`/situacoes?pagina=1&limite=100`); } catch (e) { todasSituacoes = `ERRO: ${String(e)}`; }
+
     return NextResponse.json({
       lista_raw: listaRaw,
       primeiro_pedido_id: primeiroId,
       primeira_loja_id: primeiraLoja,
+      primeira_situacao_id: primeiraSituacaoId,
       detalhe_pedido: detalhe,
       lojas_endpoint: lojaEndpoint,
       canais_venda_endpoint: canalVendaEndpoint,
+      situacao_endpoint: situacaoEndpoint,
+      todas_situacoes: todasSituacoes,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erro desconhecido';
