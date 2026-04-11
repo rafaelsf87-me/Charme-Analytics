@@ -123,18 +123,20 @@ interface GrupoTipo {
   nome: string;
   qtdTotalVendido: number; qtdDevolvido: number; qtdCancelado: number;
   taxaDevolucao: number; taxaCancelamento: number; numSkus: number;
+  produtos: { sku: string; name: string }[];
 }
 
 function groupByTipo(skus: SKUResult[]): GrupoTipo[] {
   const map = new Map<string, GrupoTipo>();
   for (const r of skus) {
     const tipo = getTipo(r.name);
-    if (!map.has(tipo)) map.set(tipo, { nome: tipo, qtdTotalVendido: 0, qtdDevolvido: 0, qtdCancelado: 0, taxaDevolucao: 0, taxaCancelamento: 0, numSkus: 0 });
+    if (!map.has(tipo)) map.set(tipo, { nome: tipo, qtdTotalVendido: 0, qtdDevolvido: 0, qtdCancelado: 0, taxaDevolucao: 0, taxaCancelamento: 0, numSkus: 0, produtos: [] });
     const g = map.get(tipo)!;
     g.qtdTotalVendido += r.qtdTotalVendido;
     g.qtdDevolvido    += r.qtdDevolvido;
     g.qtdCancelado    += r.qtdCancelado;
     g.numSkus++;
+    g.produtos.push({ sku: r.sku, name: r.name });
   }
   return Array.from(map.values())
     .map(g => ({
@@ -181,6 +183,7 @@ export function DevolucoesResults({ items, pedidoLojas, lojas, resumo, periodo, 
   const [busca, setBusca] = useState('');
   const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
   const [showLojaFilter, setShowLojaFilter] = useState(false);
+  const [openTipoInfo, setOpenTipoInfo] = useState<string | null>(null);
   const [debugData, setDebugData] = useState<string | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
 
@@ -359,14 +362,14 @@ export function DevolucoesResults({ items, pedidoLojas, lojas, resumo, periodo, 
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-zinc-100 text-zinc-400 uppercase tracking-wide text-[10px]">
-                <th className="px-4 py-3 text-left w-8"></th>
-                <th className="px-4 py-3 text-left">SKU</th>
-                <th className="px-4 py-3 text-left">Produto</th>
-                <th className="px-4 py-3 text-right">Total Vendido</th>
-                <th className="px-4 py-3 text-right">Devol.</th>
-                <th className="px-4 py-3 text-right text-charme font-semibold">Taxa Devol.</th>
-                <th className="px-4 py-3 text-right">Cancel.</th>
-                <th className="px-4 py-3 text-right">Taxa Cancel.</th>
+                <th className="px-3 py-3 text-left w-6"></th>
+                <th className="px-3 py-3 text-left w-28">SKU</th>
+                <th className="px-3 py-3 text-left">Produto</th>
+                <th className="px-3 py-3 text-right w-24">Total Vendido</th>
+                <th className="px-3 py-3 text-right w-16">Devol.</th>
+                <th className="px-3 py-3 text-right w-24 text-charme font-semibold">Taxa Devol.</th>
+                <th className="px-3 py-3 text-right w-16">Cancel.</th>
+                <th className="px-3 py-3 text-right w-24">Taxa Cancel.</th>
               </tr>
             </thead>
             <tbody>
@@ -376,14 +379,14 @@ export function DevolucoesResults({ items, pedidoLojas, lojas, resumo, periodo, 
                 </td></tr>
               ) : skusFiltrados.map(r => (
                 <tr key={r.sku} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
-                  <td className="px-4 py-2.5 text-center">{indicador(r.taxaDevolucao)}</td>
-                  <td className="px-4 py-2.5 font-mono text-zinc-600">{r.sku}</td>
-                  <td className="px-4 py-2.5 text-zinc-700 max-w-[180px] truncate" title={r.name}>{r.name}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdTotalVendido)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdDevolvido)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-charme">{r.taxaDevolucao.toFixed(1)}%</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdCancelado)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">{r.taxaCancelamento.toFixed(1)}%</td>
+                  <td className="px-3 py-2.5 text-center">{indicador(r.taxaDevolucao)}</td>
+                  <td className="px-3 py-2.5 font-mono text-zinc-600 whitespace-nowrap">{r.sku}</td>
+                  <td className="px-3 py-2.5 text-zinc-700" title={r.name}>{r.name}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-zinc-600 whitespace-nowrap">{fmt(r.qtdTotalVendido)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdDevolvido)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-charme whitespace-nowrap">{r.taxaDevolucao.toFixed(1)}%</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-zinc-600">{fmt(r.qtdCancelado)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-zinc-500 whitespace-nowrap">{r.taxaCancelamento.toFixed(1)}%</td>
                 </tr>
               ))}
             </tbody>
@@ -413,7 +416,42 @@ export function DevolucoesResults({ items, pedidoLojas, lojas, resumo, periodo, 
                 : tipoGrupos.map(g => (
                   <tr key={g.nome} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
                     <td className="px-4 py-2.5 text-center">{indicador(g.taxaDevolucao)}</td>
-                    <td className="px-4 py-2.5 font-medium text-zinc-700">{g.nome}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-zinc-700">{g.nome}</span>
+                        <span className="text-zinc-400">({g.numSkus})</span>
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenTipoInfo(openTipoInfo === g.nome ? null : g.nome)}
+                            className="w-4 h-4 rounded-full bg-zinc-200 text-zinc-500 hover:bg-charme/20 hover:text-charme text-[10px] font-bold leading-none flex items-center justify-center transition-colors"
+                            title="Ver produtos desta categoria"
+                          >
+                            i
+                          </button>
+                          {openTipoInfo === g.nome && (
+                            <div className="absolute left-0 top-6 z-30 bg-white border border-zinc-200 rounded-xl shadow-lg p-3 w-80">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[11px] font-semibold text-zinc-600">{g.nome} — {g.numSkus} produtos</span>
+                                <button
+                                  onClick={() => navigator.clipboard.writeText(g.produtos.map(p => `${p.sku} — ${p.name}`).join('\n'))}
+                                  className="text-[10px] text-charme hover:underline"
+                                >
+                                  Copiar
+                                </button>
+                              </div>
+                              <div className="overflow-y-auto max-h-60 space-y-0.5 select-text">
+                                {g.produtos.map(p => (
+                                  <div key={p.sku} className="text-[11px] text-zinc-600 py-0.5 border-b border-zinc-50 last:border-0">
+                                    <span className="font-mono text-zinc-400 mr-1">{p.sku}</span>
+                                    {p.name}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-zinc-400">{g.numSkus}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(g.qtdTotalVendido)}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-zinc-600">{fmt(g.qtdDevolvido)}</td>
