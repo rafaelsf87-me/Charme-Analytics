@@ -4,6 +4,7 @@
 // Rate limit: 340ms entre calls (3 req/s). Batch size: 50.
 
 import { blingFetch } from '@/lib/bling-auth';
+import { getSkuInfo } from '@/lib/sku-map';
 import { NextResponse } from 'next/server';
 
 export interface ClassifiedItem {
@@ -81,12 +82,19 @@ async function fetchOrder(id: number): Promise<{ tipo: 'vendido' | 'devolvido' |
 
     const items = (raw.itens ?? [])
       .filter(i => Number(i.quantidade) > 0)
-      .map(i => ({
-        codigo:     (i.codigo ?? i.produto?.codigo ?? '').toString().trim(),
-        descricao:  (i.descricao ?? '').toString().trim(),
-        quantidade: Number(i.quantidade ?? 0),
-        pedidoId:   id,
-      }))
+      .map(i => {
+        const codigoFilho = (i.codigo ?? i.produto?.codigo ?? '').toString().trim();
+        const info        = codigoFilho ? getSkuInfo(codigoFilho) : null;
+        // Resolve para SKU PAI; multiplica quantidade pelo kit (ex: 1 kit-6 = 6 un do PAI)
+        const codigo      = info?.skuPai ?? codigoFilho;
+        const quantidade  = Number(i.quantidade ?? 0) * (info?.qtyKit ?? 1);
+        return {
+          codigo,
+          descricao:  (i.descricao ?? '').toString().trim(),
+          quantidade,
+          pedidoId:   id,
+        };
+      })
       .filter(i => i.codigo.length > 0);
 
     return { tipo, items, loja };
