@@ -5,12 +5,33 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { dateFrom, dateTo, lojaId, orderId } = await req.json() as {
+    const { dateFrom, dateTo, lojaId, orderId, skuTest } = await req.json() as {
       dateFrom?: string;
       dateTo?: string;
       lojaId?: number;
       orderId?: number;
+      skuTest?: string;
     };
+
+    // Modo produto: inspeciona um SKU específico (lista + detalhe)
+    if (skuTest) {
+      const lista = await blingFetch(`/produtos?codigo=${encodeURIComponent(skuTest)}&limite=5`) as { data?: Array<{ id: number; codigo?: string; nome?: string; formato?: unknown; estrutura?: unknown }> };
+      const prod = lista?.data?.[0];
+      if (!prod) return NextResponse.json({ error: `SKU ${skuTest} não encontrado`, lista_raw: lista });
+      await new Promise(r => setTimeout(r, 350));
+      const detalhe = await blingFetch(`/produtos/${prod.id}`) as { data?: Record<string, unknown> };
+      return NextResponse.json({
+        sku: skuTest,
+        id_interno: prod.id,
+        lista_campos: Object.keys(prod),
+        lista_formato: prod.formato,
+        lista_estrutura: prod.estrutura ?? '(não veio na listagem)',
+        detalhe_campos: Object.keys(detalhe?.data ?? {}),
+        detalhe_formato: (detalhe?.data as Record<string, unknown> | undefined)?.formato ?? null,
+        detalhe_estrutura: (detalhe?.data as Record<string, unknown> | undefined)?.estrutura ?? null,
+        detalhe_full: detalhe,
+      });
+    }
 
     // Modo direto por número do pedido (número visível no Bling, não o ID interno)
     if (orderId) {
