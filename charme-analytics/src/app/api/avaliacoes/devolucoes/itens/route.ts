@@ -37,9 +37,11 @@ const SITUACAO_VALOR: Record<number, 'vendido' | 'cancelado' | 'ignorar'> = {
   12: 'vendido',   // NF Enviada ao Mercado
 };
 
-// Situações customizadas por ID (têm valor=0 mas significado específico)
+// Situações por ID — têm prioridade sobre o mapa de valor
+// IDs confirmados via debug em pedidos reais
 const SITUACAO_ID: Record<number, 'devolvido' | 'cancelado' | 'ignorar'> = {
   141129: 'devolvido', // Devolução — ML Charme do Detalhe (confirmado pedido 864349)
+  12:     'cancelado', // Cancelado — Shopee (confirmado pedido 877163, valor=2 mas é cancel)
 };
 
 function getSituacaoTipo(valor: number, id?: number): 'vendido' | 'devolvido' | 'cancelado' | 'ignorar' {
@@ -47,13 +49,6 @@ function getSituacaoTipo(valor: number, id?: number): 'vendido' | 'devolvido' | 
   return SITUACAO_VALOR[valor] ?? 'ignorar';
 }
 
-// Situações customizadas de devolução: nomes conhecidos → devolvido
-// (usado apenas se o Bling retornar nome no futuro via scope adicional)
-function classificarNome(nome: string): 'devolvido' | null {
-  const n = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (n.includes('devolucao') || n.includes('devolvido')) return 'devolvido';
-  return null;
-}
 
 function extrairLoja(data: Record<string, unknown>): string {
   const loja = data.loja as Record<string, unknown> | undefined;
