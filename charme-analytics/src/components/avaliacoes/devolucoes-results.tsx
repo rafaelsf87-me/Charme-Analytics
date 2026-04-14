@@ -55,18 +55,31 @@ function hasAll(title: string, ...words: string[]) {
 }
 
 const REGRAS_TIPO = [
-  { nome: 'CAPA SOFÁ ELASTEX RETRÁTIL',  match: (t: string) => hasAll(t, 'sofa', 'retratil', 'elastex') },
-  { nome: 'PROTETOR SOFÁ RETRÁTIL',      match: (t: string) => hasAll(t, 'protetor', 'sofa', 'retratil') },
-  { nome: 'PROTETOR SOFÁ PADRÃO',        match: (t: string) => hasAll(t, 'protetora', 'sofa') },
-  { nome: 'CAPAS SOFÁS ANTI ARRANHÃO',   match: (t: string) => hasAll(t, 'sofa', 'anti', 'arranhao') },
-  { nome: 'CAPAS SOFÁS DROP',            match: (t: string) => hasAll(t, 'sofa', 'special') },
-  { nome: 'CAPAS SOFÁS ELASTEX',         match: (t: string) => hasAll(t, 'sofa', 'elastex') },
-  { nome: 'CAPAS CADEIRAS ACOLCHOADAS',  match: (t: string) => hasAll(t, 'cadeira', 'acolchoada') || hasAll(t, 'cadeira', 'duo') },
-  { nome: 'CAPAS CADEIRAS CONFORT',      match: (t: string) => hasAll(t, 'cadeira', 'confort') },
-  { nome: 'CAPAS CADEIRA SUEDE PROTEX',  match: (t: string) => hasAll(t, 'cadeira', 'suede') },
-  { nome: 'CAPAS CADEIRAS IMPERMEÁVEIS', match: (t: string) => hasAll(t, 'cadeira', 'deluxe') },
-  { nome: 'CAPAS CADEIRAS BOUTIQUE',     match: (t: string) => hasAll(t, 'cadeira', 'boutique') },
-  { nome: 'CAPAS CADEIRAS ELASTEX',      match: (t: string) => hasAll(t, 'cadeira', 'elastex') },
+  // ── Sofás ───────────────────────────────────────────────────────────────────
+  { nome: 'Capa Sofá Elastex Retrátil',   match: (t: string) => hasAll(t, 'sofa', 'retratil', 'elastex') },
+  { nome: 'Protetor Sofá Retrátil',       match: (t: string) => hasAll(t, 'protetor', 'sofa', 'retratil') },
+  { nome: 'Protetor Sofá Padrão',         match: (t: string) => hasAll(t, 'protetora', 'sofa') },
+  { nome: 'Capa Sofá Anti Arranhão',      match: (t: string) => hasAll(t, 'sofa', 'anti', 'arranhao') },
+  { nome: 'Capa Sofá Drop',               match: (t: string) => hasAll(t, 'sofa', 'special') },
+  { nome: 'Capa Sofá Elastex',            match: (t: string) => hasAll(t, 'sofa', 'elastex') },
+  { nome: 'Capa Braço Sofá',             match: (t: string) => hasAll(t, 'braco', 'sofa') },
+
+  // ── Assento Cadeira (mais específico primeiro) ──────────────────────────────
+  { nome: 'Assento Cadeira Impermeável',  match: (t: string) => hasAll(t, 'assento', 'cadeira', 'impermeav') },
+  { nome: 'Assento Cadeira Cristal',      match: (t: string) => hasAll(t, 'assento', 'cadeira', 'cristal') },
+  { nome: 'Assento Cadeira',             match: (t: string) => hasAll(t, 'assento', 'cadeira') },
+
+  // ── Cadeiras (mais específico primeiro) ─────────────────────────────────────
+  { nome: 'Cadeira Acolchoada',           match: (t: string) => hasAll(t, 'protex', 'grid') || hasAll(t, 'cadeira', 'matelad') || hasAll(t, 'cadeira', 'acolchoada') || hasAll(t, 'cadeira', 'duo') },
+  { nome: 'Cadeira Confort',              match: (t: string) => hasAll(t, 'cadeira', 'confort') },
+  { nome: 'Cadeira Suede Protex',         match: (t: string) => hasAll(t, 'cadeira', 'suede') },
+  { nome: 'Cadeira Impermeável',          match: (t: string) => hasAll(t, 'cadeira', 'impermeav') || hasAll(t, 'cadeira', 'deluxe') },
+  { nome: 'Cadeira Boutique',             match: (t: string) => hasAll(t, 'cadeira', 'boutique') },
+  { nome: 'Cadeira Escritório',           match: (t: string) => hasAll(t, 'cadeira', 'escritor') },
+  { nome: 'Cadeira Elastex',              match: (t: string) => hasAll(t, 'cadeira de jantar') || hasAll(t, 'cadeira sala de jantar') || hasAll(t, 'cadeira', 'malha coladinha') || hasAll(t, 'cadeira', 'elastex') },
+
+  // ── Outros produtos ─────────────────────────────────────────────────────────
+  { nome: 'Capa Puff',                    match: (t: string) => hasAll(t, 'puff') },
 ];
 
 function getTipo(name: string): string {
