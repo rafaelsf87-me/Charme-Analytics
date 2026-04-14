@@ -179,6 +179,127 @@ function exportXlsx(data: SKUResult[], periodo: { from: string; to: string }) {
   XLSX.writeFile(wb, `devolucoes_${periodo.from}_${periodo.to}.xlsx`);
 }
 
+function exportHtml(
+  skus: SKUResult[],
+  grupos: GrupoTipo[],
+  periodo: { from: string; to: string },
+  resumo: { totalPedidos: number; verificados: number; devolvidos: number; cancelados: number },
+) {
+  const ind = (taxa: number) => taxa > 5 ? '🔴' : taxa >= 3 ? '🟡' : '🟢';
+  const pct = (n: number) => n.toFixed(1).replace('.', ',') + '%';
+  const num = (n: number) => n.toLocaleString('pt-BR');
+  const totalGeral = resumo.verificados + resumo.devolvidos + resumo.cancelados;
+  const pctDev = totalGeral > 0 ? pct((resumo.devolvidos / totalGeral) * 100) : '0,0%';
+
+  const skuRows = skus.map(r => `
+    <tr>
+      <td>${ind(r.taxaDevolucao)}</td>
+      <td class="mono">${r.sku}</td>
+      <td class="produto">${r.name}</td>
+      <td class="num">${num(r.qtdTotalVendido)}</td>
+      <td class="num">${num(r.qtdVerificado)}</td>
+      <td class="num dev">${num(r.qtdDevolvido)}</td>
+      <td class="num ${r.taxaDevolucao > 5 ? 'red' : r.taxaDevolucao >= 3 ? 'yellow' : 'green'}">${pct(r.taxaDevolucao)}</td>
+      <td class="num">${num(r.qtdCancelado)}</td>
+      <td class="num">${pct(r.taxaCancelamento)}</td>
+    </tr>`).join('');
+
+  const tipoRows = grupos.map(g => `
+    <tr>
+      <td>${ind(g.taxaDevolucao)}</td>
+      <td class="produto">${g.nome} <span class="badge">${g.numSkus}</span></td>
+      <td class="num">${num(g.qtdTotalVendido)}</td>
+      <td class="num">${num(g.qtdDevolvido)}</td>
+      <td class="num ${g.taxaDevolucao > 5 ? 'red' : g.taxaDevolucao >= 3 ? 'yellow' : 'green'}">${pct(g.taxaDevolucao)}</td>
+      <td class="num">${num(g.qtdCancelado)}</td>
+      <td class="num">${pct(g.taxaCancelamento)}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Devoluções ${fmtDate(periodo.from)} – ${fmtDate(periodo.to)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f4; color: #27272a; font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+  h1 { font-size: 20px; font-weight: 700; color: #6b21a8; margin-bottom: 4px; }
+  .sub { color: #71717a; font-size: 12px; margin-bottom: 24px; }
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+  .card { background: white; border: 1px solid #e4e4e7; border-radius: 10px; padding: 14px 20px; min-width: 130px; }
+  .card .label { font-size: 11px; color: #71717a; margin-bottom: 4px; }
+  .card .value { font-size: 22px; font-weight: 700; }
+  .card.red .value { color: #dc2626; }
+  .card.green .value { color: #16a34a; }
+  h2 { font-size: 14px; font-weight: 600; margin-bottom: 10px; margin-top: 28px; }
+  table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e4e4e7; border-radius: 10px; overflow: hidden; }
+  thead { background: #fafafa; }
+  th { padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600; color: #71717a; border-bottom: 1px solid #e4e4e7; }
+  th.num, td.num { text-align: right; }
+  td { padding: 7px 12px; border-bottom: 1px solid #f4f4f5; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafafa; }
+  td.mono { font-family: monospace; font-size: 11px; color: #6b21a8; }
+  td.produto { max-width: 320px; }
+  td.dev { font-weight: 600; }
+  td.red { color: #dc2626; font-weight: 700; }
+  td.yellow { color: #d97706; font-weight: 600; }
+  td.green { color: #16a34a; }
+  .badge { display: inline-block; background: #f4f4f5; border-radius: 9999px; padding: 1px 7px; font-size: 10px; color: #71717a; margin-left: 6px; }
+  .footer { margin-top: 32px; font-size: 11px; color: #a1a1aa; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Devoluções &amp; Cancelamentos</h1>
+  <div class="sub">Período: ${fmtDate(periodo.from)} – ${fmtDate(periodo.to)} &nbsp;·&nbsp; Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Total Pedidos</div><div class="value">${num(resumo.totalPedidos)}</div></div>
+    <div class="card green"><div class="label">Verificados</div><div class="value">${num(resumo.verificados)}</div></div>
+    <div class="card red"><div class="label">Devolvidos</div><div class="value">${num(resumo.devolvidos)}</div></div>
+    <div class="card red"><div class="label">Taxa Devolução</div><div class="value">${pctDev}</div></div>
+    <div class="card"><div class="label">Cancelados</div><div class="value">${num(resumo.cancelados)}</div></div>
+    <div class="card"><div class="label">SKUs analisados</div><div class="value">${num(skus.length)}</div></div>
+  </div>
+
+  <h2>Por SKU (${num(skus.length)} produtos)</h2>
+  <table>
+    <thead><tr>
+      <th></th><th>SKU</th><th>Produto</th>
+      <th class="num">Total Vendido</th><th class="num">Verificado</th>
+      <th class="num">Devolvido</th><th class="num">Taxa Dev.</th>
+      <th class="num">Cancelado</th><th class="num">Taxa Canc.</th>
+    </tr></thead>
+    <tbody>${skuRows}</tbody>
+  </table>
+
+  <h2>Por Tipo (${num(grupos.length)} categorias)</h2>
+  <table>
+    <thead><tr>
+      <th></th><th>Categoria</th>
+      <th class="num">Total Vendido</th>
+      <th class="num">Devolvido</th><th class="num">Taxa Dev.</th>
+      <th class="num">Cancelado</th><th class="num">Taxa Canc.</th>
+    </tr></thead>
+    <tbody>${tipoRows}</tbody>
+  </table>
+
+  <div class="footer">Charme Analytics · ${new Date().toLocaleString('pt-BR')}</div>
+</div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `devolucoes_${periodo.from}_${periodo.to}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 const TOP_N_OPTIONS: { label: string; value: TopN }[] = [
   { label: 'Top 10', value: 10 },
   { label: 'Top 30', value: 30 },
@@ -364,6 +485,10 @@ export function DevolucoesResults({ items, pedidoLojas, lojas, resumo, periodo, 
             <button onClick={() => exportXlsx(skusFiltrados, periodo)}
               className="h-8 px-3 bg-white border border-charme-border text-charme text-xs font-medium rounded-lg hover:bg-charme/5 transition-colors">
               📥 XLSX
+            </button>
+            <button onClick={() => exportHtml(skusFiltrados, tipoGrupos, periodo, resumoFiltrado)}
+              className="h-8 px-3 bg-white border border-charme-border text-charme text-xs font-medium rounded-lg hover:bg-charme/5 transition-colors">
+              🌐 HTML
             </button>
           </div>
         </div>
