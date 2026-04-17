@@ -22,8 +22,8 @@ function getKv(): Redis | null {
   return new Redis({ url, token });
 }
 
-async function loadTokens(): Promise<BlingTokens | null> {
-  if (memCache) return memCache;
+async function loadTokens(skipMemCache = false): Promise<BlingTokens | null> {
+  if (!skipMemCache && memCache) return memCache;
   const kv = getKv();
   if (kv) {
     const stored = await kv.get<BlingTokens>(KV_KEY);
@@ -89,11 +89,22 @@ export async function blingFetch(path: string): Promise<unknown> {
 
   let res = await doFetch(tokens.accessToken);
 
-  // 401 → refresh, persiste novos tokens e retry único
+  // 401 → tenta refresh; se falhar (race condition), busca token mais recente do KV e tenta uma última vez
   if (res.status === 401) {
-    const newTokens = await doRefresh(tokens.refreshToken);
-    await saveTokens(newTokens);
-    res = await doFetch(newTokens.accessToken);
+    let freshTokens: BlingTokens;
+    try {
+      freshTokens = await doRefresh(tokens.refreshToken);
+      await saveTokens(freshTokens);
+    } catch (err) {
+      // Outro request pode ter feito o refresh antes — busca do KV ignorando cache
+      const kvTokens = await loadTokens(true);
+      if (kvTokens && kvTokens.accessToken !== tokens.accessToken) {
+        freshTokens = kvTokens;
+      } else {
+        throw err;
+      }
+    }
+    res = await doFetch(freshTokens.accessToken);
   }
 
   if (!res.ok) {
